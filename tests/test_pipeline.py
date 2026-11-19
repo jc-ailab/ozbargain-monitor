@@ -59,6 +59,8 @@ class AdapterTests(unittest.TestCase):
         first = root.find('./channel/item')
         first.find('pubDate').text = 'broken'
         self.assertEqual(len(parse(root)), 29)
+        first.find('pubDate').text = 'Fri, 20 Nov 2026 06:48:32'
+        self.assertEqual(len(parse(root)), 29)
         first.find('pubDate').text = 'Fri, 20 Nov 2026 06:48:32 +1100'
         first.remove(first.find('{https://www.ozbargain.com.au}meta'))
         self.assertEqual(parse(root)[0].metrics['clicks'], 0)

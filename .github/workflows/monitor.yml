@@ -1,0 +1,119 @@
+name: Refresh monitors and publish Pages
+
+'on':
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'monitor_core/**'
+      - 'monitors/**'
+      - 'scripts/**'
+      - 'site/**'
+      - 'tests/**'
+      - '.github/workflows/monitor.yml'
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  models: read
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+env:
+  STOP_DATE: ${{ vars.STOP_DATE || '2027-01-01' }}
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.stop.outputs.proceed }}
+    steps:
+      - name: Stop scheduled runs after the Sydney stop date
+        id: stop
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python3 - <<'PY'
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          import os
+          today = datetime.now(ZoneInfo('Australia/Sydney')).date().isoformat()
+          stopped = os.environ['EVENT_NAME'] == 'schedule' and today >= os.environ['STOP_DATE']
+          if stopped:
+              print('::notice::Scheduled refresh stopped at STOP_DATE; manual dispatch remains available.')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write('proceed=' + str(not stopped).lower() + '\n')
+          PY
+
+  publish:
+    needs: guard
+    if: needs.guard.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check out state branch or create orphan
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git ls-remote --exit-code --heads origin state > /dev/null; then
+            git fetch --depth=1 origin state
+            git worktree add -B state ./state FETCH_HEAD
+          else
+            result=$?
+            if [ "$result" -ne 2 ]; then
+              echo 'State branch lookup failed; refusing to recreate existing state.' >&2
+              exit "$result"
+            fi
+            git worktree add --detach ./state HEAD
+            git -C state switch --orphan state
+          fi
+      - name: Run offline tests
+        run: python -m unittest discover -s tests
+      - name: Run both monitors with previous-data fallback
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p generated/data state/ozbargain state/hackernews
+          if [ -d state/data ]; then cp -a state/data/. generated/data/; fi
+          for monitor in ozbargain hackernews; do
+            python scripts/run.py --monitor "$monitor" --state-dir "state/$monitor" --out generated || python scripts/fallback.py --monitor "$monitor" --out generated
+          done
+      - name: Assemble site and persist publication fallback
+        run: |
+          mkdir -p _site state/data
+          cp -a site/. _site/
+          cp -a generated/data _site/
+          cp -a generated/data/. state/data/
+      - name: Keep a single amended state commit
+        run: |
+          git -C state add ozbargain hackernews data
+          if ! git -C state diff --cached --quiet; then
+            if git -C state rev-parse --verify HEAD > /dev/null 2>&1; then
+              git -C state commit --amend --no-edit
+            else
+              git -C state commit -m 'Update monitor state'
+            fi
+            git -C state push --force origin HEAD:state
+          fi
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

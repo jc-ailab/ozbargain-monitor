@@ -33,7 +33,10 @@ def web_url(value):
 
 
 def pubdate(value):
-    return iso(parsedate_to_datetime(value))
+    parsed = parsedate_to_datetime(value)
+    if parsed.tzinfo is None:
+        raise ValueError('RSS date requires a timezone')
+    return iso(parsed)
 
 
 def number(value):
