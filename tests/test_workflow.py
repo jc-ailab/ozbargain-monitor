@@ -15,6 +15,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_action_versions_and_pages_artifact_contract(self):
+        text = (ROOT / '.github/workflows/monitor.yml').read_text()
+        self.assertEqual(re.findall(r'uses: (actions/\S+)', text), [
+            'actions/checkout@v7', 'actions/setup-python@v7',
+            'actions/upload-pages-artifact@v5', 'actions/deploy-pages@v5'])
+        upload = text.split('      - name: Upload Pages artifact\n', 1)[1]
+        upload, deploy = upload.split('      - name: Deploy Pages\n', 1)
+        self.assertIn('name: github-pages', upload)
+        self.assertIn('path: _site', upload)
+        self.assertIn('artifact_name: github-pages', deploy)
+        self.assertIn('url: ${{ steps.deployment.outputs.page_url }}', text)
+
     def test_sydney_stop_guard(self):
         text = (ROOT / '.github/workflows/monitor.yml').read_text()
         guard = re.search(r"python3 - <<'PY'\n(.*?)\n          PY", text, re.S)[1]
