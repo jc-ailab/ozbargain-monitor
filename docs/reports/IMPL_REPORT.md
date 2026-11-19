@@ -125,3 +125,81 @@ No product decision is needed to review this implementation. Recommended next st
 3. Observe scheduled samples before claiming operational readiness. Keep the existing stop date; consider weight tuning only after enough real data, as suggested by the charter.
 
 Session handoff: built and locally verified the complete specified scope; new evidence is two successful live sources plus 25 offline tests; decisions are recorded above; remaining issues are independent visual/hosted/AI acceptance; next action belongs to the reviewer. Long-term memory proposal: none; retain project facts in this report and Git.
+
+
+## Round 2
+
+Date: 2026-11-20 (Australia/Sydney). Scope: [REVIEW_1.md](../reviews/REVIEW_1.md), R1–R6 in that order. **All six implemented and locally verified; independent review remains pending.** Python remains standard library only and the frontend remains vanilla JS/CSS. No push, publication, new dependency, real AI call or live OzBargain request was made (**0 of the permitted 2 requests used**). Writes stayed in this repository apart from the explicitly requested screenshots in `/tmp`; browser profiles/build scratch stayed under ignored `.state/layoutcheck/`. No Shared Context, outbox or memory writes.
+
+### Changes and per-item verification
+
+| Item / local commit | What changed | Verification and exact command output summary |
+| --- | --- | --- |
+| R1 / `ba94acb` | Zero minimum sizes on relevant grid/flex children, bounded single-column grids, wrapping navigation/words and correct mobile Top 3 image/title columns. Compact stats preserve a readable single-line number, e.g. `1620` → `1.6K`. `app.js` sets `data-overflow` after render only for `?layoutcheck=1`. Added the separate `scripts/check_layout.py` developer tool. | `python3 -m unittest tests.test_frontend`: `Ran 2 tests in 0.002s`, `OK`. `node --check site/app.js`: exit 0, no output. `node tests/frontend_smoke.js site`: four PASS lines, including compact-number assertions. `python3 -u scripts/check_layout.py`: eight PASS lines, both monitors × 360/375/390/1300px; actual viewport and PNG widths checked, overflow=false and every score/stat fits. Final exact browser output is below. |
+| R2 / `c7980af` | Remove nested parenthesised text and the `+ Delivery/Shipping/Postage` tail before detecting a standalone Free offer or first advertised price `$0` / `$0.00`. Exclude free delivery/shipping/postage/returns; retain Freebies-category override. | `python3 -m unittest tests.test_pipeline.AdapterTests`: `Ran 8 tests in 0.034s`, `OK`. Includes all five reviewer titles plus shipping/postage/returns, nested parentheses, nonzero decimals and a later zero-cost add-on. Existing free/category/flag parsing and request-budget tests still pass. Expected malformed-date/offline warnings came from mocks. |
+| R3 / `27daf38` | Publish only items seen within `display_hours` (configurable, default 36), while retaining seven-day state/history. Mark current-run feed membership explicitly. Both card types label departed items `已离开 feed · 数据截至 <time>（悉尼）`. Stats, Top 3 and summary candidates use only the published set. README/template guide explain the two time windows. | `python3 -m unittest tests.test_pipeline.PipelineTests`: final targeted run `Ran 6 tests in 0.158s`, `OK`. Checks the default with the config key omitted, inclusive 36-hour boundary, exclusion one microsecond later, one-hour override, state/snapshot preservation, feed membership, stale burst suppression, published JSON and totals/tier counts. `node tests/frontend_smoke.js site`: four PASS lines; both ranked/list card stale labels and current-card absence asserted. |
+| R4 / `1e560c4` | Set both bundled monitor defaults to hot_score=55, hot_votes=80, rising_score=40; README thresholds updated. Viral and burst rules unchanged. | `python3 -m unittest tests.test_pipeline.ScoreTests`: final run `Ran 6 tests in 0.059s`, `OK`. Covers scores 39/40, 54/55, 69/70 and net-vote boundaries 79/80 and 199/200 independently, plus net-vote subtraction, burst, monotonicity and keyword behaviour. Updated the old hot-example fixture from 30 to 60 comments because it no longer qualifies under the requested defaults. |
+| R5 / `c10942b` | Keep action labels intact and buttons at intrinsic width; flex-wrap moves whole buttons onto the next row when needed. Bound each action to its container. | `python3 -u scripts/check_layout.py`: eight PASS lines, all actions inside their containers, no overlap or text clipping, single row when their exact widths plus gaps fit. Repeats after all items are favourited/hidden with show-hidden enabled, exercising the longer `★ 已收藏` / `取消隐藏` labels. Fractional geometry is used to avoid rounding a nearly fitting row into a false failure. |
+| R6 / `76c5653` | Always render a neutral thumbnail with the first letter of the merchant hostname, falling back to category/monitor. Capturing load/error handlers support dynamically rendered images; successful images cover the letter, failed/empty images retain it. Unsafe URLs also use the placeholder. | `node --check site/app.js`: exit 0, no output. `node tests/frontend_smoke.js site`: four PASS lines including missing/unsafe image markup, escaped initials, error, successful load and zero-width load handling. `python3 -u scripts/check_layout.py`: eight PASS lines; each page's Top 3 deliberately includes one valid local SVG, one corrupt local PNG and one absent image, and checks actual image state and letter visibility. No external image requests. |
+
+### Final verification evidence
+
+```sh
+python3 -m unittest discover -s tests
+```
+
+```text
+Ran 29 tests in 0.944s
+
+OK
+```
+
+Exit 0. Expected malformed-item, feed-error and AI-error messages are deliberate fixture/mock cases. The suite still needs no Chrome or Node; Chrome checks remain a separate developer command.
+
+```sh
+python3 scripts/run.py --monitor ozbargain --fixtures
+python3 scripts/run.py --monitor hackernews --fixtures
+node --check site/app.js
+node tests/frontend_smoke.js site
+```
+
+Fixture builds: `ozbargain: 48 items; feeds={'deals': 'ok', 'front': 'ok'}` and `hackernews: 20 items; feeds={'front': 'ok'}`. Both logged `AI skipped: GITHUB_TOKEN absent`; outputs are ignored `site/data/` files. The OzBargain fixture was refreshed again after R3 with the same count/feed results. Syntax check exited 0 with no output. Final smoke output:
+
+```text
+PASS ozbargain: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback; storage=true
+PASS ozbargain: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback; storage=false
+PASS hackernews: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback; storage=true
+PASS hackernews: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback; storage=false
+```
+
+```sh
+python3 -u scripts/check_layout.py
+```
+
+**Chrome environment:** first sandboxed attempt returned `BLOCKED Chrome failed to launch/run (exit -6)`. The authorised identical script ran outside the sandbox successfully. Early developer iterations also exposed Chrome's 500px native minimum and CLI screenshot reset; those outputs were not accepted as phone validation. The final script runs the requested `--headless=new --window-size=W,2400 --virtual-time-budget=5000 --dump-dom` capture, then uses a local, standard-library CDP transport and a fresh exact-width emulated tab for the measured DOM and final PNG. It checks both `window.innerWidth` and PNG width against W, replaces external images with local fixtures, disables animation only in the fixture copy for stable screenshots, and closes/terminates its own Chrome process. No browser package is required. Chrome absence/start failure/timeout or any failed assertion returns nonzero.
+
+Final output (exit 0):
+
+```text
+PASS index.html width=360: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/tmp/ozb-layout-index-360.png
+PASS index.html width=375: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/tmp/ozb-layout-index-375.png
+PASS index.html width=390: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/tmp/ozb-layout-index-390.png
+PASS index.html width=1300: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/tmp/ozb-layout-index-1300.png
+PASS hn.html width=360: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/tmp/ozb-layout-hn-360.png
+PASS hn.html width=375: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/tmp/ozb-layout-hn-375.png
+PASS hn.html width=390: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/tmp/ozb-layout-hn-390.png
+PASS hn.html width=1300: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/tmp/ozb-layout-hn-1300.png
+```
+
+Manually inspected the exact-width 360px capture during R1, and 375px / 1300px image-placeholder captures during R6; the final 375px screenshot was also inspected after disabling fixture animation. This supersedes Round 1's no-browser gap for the checks above. It does not establish iPhone/Safari, dark-mode visual acceptance, hosted Actions/Pages, Python 3.12 execution or real GitHub Models access. Those remain independent/operational acceptance boundaries.
+
+`git diff --check`: exit 0, no whitespace errors. All six fix commits are local and end with `Co-Authored-By: Codex <noreply@openai.com>`. This Round 2 report and the checker usage instructions are committed as the final documentation commit. No push.
+
+### Handoff
+
+- Objective/result: R1–R6 fixed in order, with focused tests and exact-width browser evidence; ready for reviewer Round 2.
+- New facts: 29 offline tests pass; eight browser combinations pass, including longer action labels and real image errors; zero live feed requests this session.
+- Decisions: display age is independent of history retention; both monitor defaults use the revised tiers; Chrome emulation is verified because native window size alone was insufficient.
+- Unresolved/human decisions: independent review and existing hosted/device/AI acceptance remain; no new product decision is required to review these fixes.
+- Next steps: reviewer checks the six commits and screenshots; after acceptance, run the already-planned authorised manual Actions/Pages check to establish hosted behaviour.
+- Long-term memory proposal: none; keep implementation facts and this handoff in the repo. No external proposal file was written because this session explicitly forbids outside-repo writes.

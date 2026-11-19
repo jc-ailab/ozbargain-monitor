@@ -17,6 +17,14 @@ python3 -m http.server 8000 --directory site
 
 打开 `http://localhost:8000`。另开终端运行 `python3 scripts/check_site.py`，可检查两页资源、JSON 与所有 JS element id；可选 `node tests/frontend_smoke.js site` 执行无浏览器交互冒烟检查。首次只有一个采样点，爆发趋势显示「采样中」。Fixture 与 live 的默认历史分别在 `.state/fixtures/<monitor>/` 与 `.state/live/<monitor>/`，避免混入演示数据。`site/data/` 为生成文件，不提交。
 
+可选真实浏览器布局检查（开发工具，不进入 unittest / CI）：
+
+```sh
+python3 scripts/check_layout.py
+```
+
+需要本机 Google Chrome，默认路径为 macOS 的 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`，可用 `--chrome` 覆盖。脚本独立构建并服务离线 fixtures，检查两页在 360 / 375 / 390 / 1300px 下的溢出、分数、统计、按钮和图片失败占位；不请求外部图片或 feed。截图保存在 `/tmp/ozb-layout-*.png`，可用 `--screenshots` 改目录。Chrome 若被沙箱阻止，需要在获准的沙箱外环境运行；启动失败会明确报错。
+
 真实采样（不要频繁运行）：
 
 ```sh
