@@ -4,3 +4,5 @@ __pycache__/
 state/
 _site/
 site/data/
+.DS_Store
+/out/

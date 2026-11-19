@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="一眼看懂 OzBargain 热门好价、上升趋势和突然爆发的帖子。每半小时采样，免费开源。">
+  <title>OzBargain 超值 Deal 监控</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body data-monitor="ozbargain">
+  <a class="skip" href="#main">跳到内容</a>
+  <header class="masthead">
+    <div class="header-inner">
+      <div class="brand-line"><a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">热</span> 热度观察站</a><nav aria-label="切换监控"><a href="index.html" aria-current="page">好价</a><a href="hn.html">科技</a></nav></div>
+      <div class="title-line"><div><p class="eyebrow">少刷一会儿 · 好价不错过</p><h1 id="title">OzBargain 超值 Deal 监控</h1></div><button id="settings-open" class="settings-button" aria-haspopup="dialog">⚙ 设置</button></div>
+      <p class="refresh"><span class="status-dot" aria-hidden="true"></span><span id="updated">正在读取最新数据…</span><span class="schedule">每 30 分钟采样</span></p>
+    </div>
+  </header>
+  <main id="main" class="shell">
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section aria-label="本期数据概况"><div id="stats" class="stats"></div></section>
+    <section id="digest-box" class="digest" aria-labelledby="digest-title" hidden><div class="section-label"><h2 id="digest-title">本期速览</h2><span class="ai-label">AI 摘要</span></div><p id="digest-text"></p></section>
+    <section id="top-section" aria-labelledby="top-title"><div class="section-heading"><h2 id="top-title">爆火榜 <span>Top 3</span></h2><p>活跃好价 · 按热度分</p></div><div id="top-list" class="top-grid"></div></section>
+    <section class="all-section" aria-labelledby="all-title">
+      <div class="section-heading"><h2 id="all-title">发现好价</h2><span id="count" class="muted" aria-live="polite"></span></div>
+      <div class="toolbar"><label class="search"><span aria-hidden="true">⌕</span><span class="sr-only">搜索标题或标签</span><input id="search" type="search" placeholder="搜索标题、品牌、标签…" autocomplete="off"></label><label class="sort"><span class="sr-only">排序方式</span><select id="sort"><option value="score">热度分 ↓</option><option value="latest">最新发布</option><option value="votes">票数最多</option><option value="comments">评论最多</option><option value="burst">爆发增量</option></select></label></div>
+      <div id="filters" class="filters" role="group" aria-label="筛选帖子"></div>
+      <div class="list-meta"><p id="filter-note" class="muted">热度是社区关注度，不代表商品质量。</p><button id="hidden-toggle" class="text-button" hidden></button></div>
+      <div id="deal-list" class="deal-list"></div>
+      <div id="empty" class="empty" hidden><span aria-hidden="true">◎</span><h3>这里暂时安静</h3><p id="empty-text">试试其他筛选，或调整关键词设置。</p></div>
+    </section>
+  </main>
+  <footer class="shell footer"><p id="source-note">数据来自 OzBargain 公开 RSS，与 OzBargain 无关联。</p><p>AI 摘要可能有误；价格、库存及条款以原帖和商家为准。</p><a href="https://github.com/jc-ailab/ozbargain-monitor" target="_blank" rel="noopener noreferrer">开源项目 ↗</a><span> · 在你的浏览器保存偏好</span></footer>
+  <dialog id="settings" aria-labelledby="settings-title">
+    <form id="settings-form">
+      <div class="section-heading"><h2 id="settings-title">按你的喜好看</h2><button id="settings-close" type="button" aria-label="关闭设置" class="icon-button">✕</button></div>
+      <p class="muted">仅保存在此浏览器，不需要账户。</p>
+      <label class="field" for="watch">关注词<textarea id="watch" rows="3" placeholder="例如 Apple, coffee, LEGO"></textarea><small>用逗号或换行分隔，匹配标题和标签。</small></label>
+      <label class="field" for="block">屏蔽词<textarea id="block" rows="3" placeholder="不想看到的关键词"></textarea></label>
+      <label class="check"><input id="front-only" type="checkbox">只看首页</label>
+      <label class="check"><input id="show-expired" type="checkbox">显示已过期帖子（排在最后）</label>
+      <label class="check"><input id="show-blocked" type="checkbox">显示屏蔽词命中的帖子</label>
+      <p class="muted config-note">评分阈值和权重在 GitHub 的 <a id="config-link" href="https://github.com/jc-ailab/ozbargain-monitor/blob/main/monitors/ozbargain/config.json" target="_blank" rel="noopener noreferrer">config.json</a> 中设置。</p>
+      <div class="drawer-actions"><button id="settings-reset" type="button">恢复默认</button><button type="submit" class="primary">保存设置</button></div>
+    </form>
+  </dialog>
+  <div id="announcement" class="sr-only" aria-live="polite"></div>
+  <noscript><p class="shell notice">请启用 JavaScript 来加载监控数据。</p></noscript>
+</body>
+</html>
