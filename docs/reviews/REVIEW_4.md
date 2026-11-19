@@ -7,7 +7,7 @@ Run https://github.com/jc-ailab/ozbargain-monitor/actions/runs/44621060409 (work
 
 ## Required
 
-R8. Upgrade workflow actions to current majors: actions/checkout@v6, actions/setup-python@v6, actions/upload-pages-artifact@v5, actions/deploy-pages@v5 (check each action's README for changed inputs). This should also clear the Node 20 deprecation warnings.
+R8. Upgrade workflow actions to current majors: actions/checkout@v7, actions/setup-python@v7 (latest releases: v7.0.1 and v7.1.0), actions/upload-pages-artifact@v5, actions/deploy-pages@v5 (check each action's README for changed inputs). This should also clear the Node 20 deprecation warnings.
 
 R9. AI provider becomes pluggable and **off by default**:
 - config `summary.provider`: `"none"` (default) or `"gemini"`. Gemini uses the official REST `generateContent` endpoint with an API key read from env `GEMINI_API_KEY` (workflow passes `secrets.GEMINI_API_KEY`), model id from config (default `gemini-3.8-flash`), JSON response via `responseMimeType: application/json`. If provider is none or the key is missing, skip with one log line and zero network calls.
