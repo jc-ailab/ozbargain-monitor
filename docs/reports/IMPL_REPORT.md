@@ -203,3 +203,76 @@ Manually inspected the exact-width 360px capture during R1, and 375px / 1300px i
 - Unresolved/human decisions: independent review and existing hosted/device/AI acceptance remain; no new product decision is required to review these fixes.
 - Next steps: reviewer checks the six commits and screenshots; after acceptance, run the already-planned authorised manual Actions/Pages check to establish hosted behaviour.
 - Long-term memory proposal: none; keep implementation facts and this handoff in the repo. No external proposal file was written because this session explicitly forbids outside-repo writes.
+
+## Round 3
+
+Date: 2026-11-20 (Australia/Sydney). Scope: [REVIEW_2.md](../reviews/REVIEW_2.md), R7 only. Continued the interrupted, uncommitted iframe changes in `scripts/check_layout.py`. **R7 implemented and verified locally.** The Round 2 phone-width evidence and emulation-verification claim are superseded by the fresh iframe results below.
+
+### Change
+
+The checker serves each fixture inside a same-origin iframe with an explicit width of 360, 375, 390 or 1300 CSS pixels, inside a 1400px Chrome window. Probes execute in the iframe, recompute its document overflow and return its live `contentWindow.innerWidth` independently of the DOM attributes. Both measurements must match the requested width. CDP screenshots are clipped to the iframe rectangle, retained under `.state/layoutcheck/screenshots/`, and their PNG header widths must also match. The former emulation and CLI-capture path is removed. README usage and screenshot paths are updated.
+
+Added three standard-library offline regression tests: reject a live 500px viewport even with plausible 375px DOM/PNG evidence; reject incorrect DOM width, overflow, missing assertions, failed saved-action checks or empty rendering; reject missing, truncated or wrong-width screenshot headers. These tests launch neither Chrome nor a server. Early Chrome exit without a CDP endpoint fails even if its exit status is zero. Local server permission errors now produce a concise BLOCKED result.
+
+No frontend changes were needed: the real-width iframe run found no overflow. No new dependency, live OzBargain/Hacker News request, AI call, push or publication. Source edits, browser profiles, generated fixture sites and retained screenshots are in this repository; no Shared Context, outbox or memory writes.
+
+### Exact verification results
+
+`python3 -m unittest tests.test_layout_checker`: exit 0.
+
+```text
+Ran 3 tests in 0.002s
+
+OK
+```
+
+`python3 -m unittest discover -s tests`: exit 0. Expected malformed-item, offline-feed and AI-failure warnings originate from fixtures/mocks.
+
+```text
+Ran 32 tests in 1.130s
+
+OK
+```
+
+`node --check site/app.js`: exit 0, no output.
+
+`node tests/frontend_smoke.js site`: exit 0.
+
+```text
+PASS ozbargain: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback; storage=true
+PASS ozbargain: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback; storage=false
+PASS hackernews: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback; storage=true
+PASS hackernews: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback; storage=false
+```
+
+`python3 -u scripts/check_layout.py` initially could not bind its localhost fixture server inside the sandbox. After adding explicit error handling, the sandbox run returned exit 1 with:
+
+```text
+BLOCKED local fixture server: [Errno 1] Operation not permitted
+```
+
+The same command ran successfully **outside the sandbox** with the finished checker: Chrome launched and all eight combinations passed, exit 0. Exact output:
+
+```text
+PASS index.html width=360 iframe.innerWidth=360: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-index-360.png
+PASS index.html width=375 iframe.innerWidth=375: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-index-375.png
+PASS index.html width=390 iframe.innerWidth=390: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-index-390.png
+PASS index.html width=1300 iframe.innerWidth=1300: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-index-1300.png
+PASS hn.html width=360 iframe.innerWidth=360: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-hn-360.png
+PASS hn.html width=375 iframe.innerWidth=375: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-hn-375.png
+PASS hn.html width=390 iframe.innerWidth=390: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-hn-390.png
+PASS hn.html width=1300 iframe.innerWidth=1300: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-hn-1300.png
+```
+
+Visually inspected `ozb-layout-index-360.png` and `ozb-layout-hn-375.png`: scores, stats, action labels and image placeholders are visible without horizontal overflow. All eight PNGs remain in the ignored screenshot directory. `git diff --check`: exit 0, no whitespace errors.
+
+This section is included with the R7 implementation in the local commit titled `Fix R7 layout checks with exact-width iframes`, with `Co-Authored-By: Codex <noreply@openai.com>`. No push.
+
+### Handoff
+
+- Objective/result: R7 finished from the partial diff; exact iframe widths and screenshots verified across both pages and all four requested widths.
+- New facts: 32 offline tests and eight Chrome combinations pass; no overflow found, so no product CSS/JS fix required.
+- Decision: use an exact-width same-origin iframe and independently assert its live viewport; keep screenshots inside the repo.
+- Unresolved/human decisions: independent R7 review remains; iPhone/Safari, dark-mode visual acceptance, hosted Actions/Pages, Python 3.12 execution and real GitHub Models access remain outside this validation. No new implementation decision is needed.
+- Recommended next step: review this commit and the retained phone-width screenshots to assess R7 acceptance.
+- Long-term memory proposal: none; implementation evidence stays in this report. No external proposal file was written because this session forbids outside-repo writes.

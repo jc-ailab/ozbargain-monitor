@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Offline Chrome layout regression check, deliberately separate from unittest.
 
-Builds and serves isolated fixtures; screenshots default to /tmp/ozb-layout-*.png.
+Builds and serves isolated fixtures in exact-width same-origin iframes.
+Screenshots default to .state/layoutcheck/screenshots/ozb-layout-*.png.
 No external images or feed/API requests are used.
 """
 import argparse
@@ -33,6 +34,7 @@ WIDTHS = (360, 375, 390, 1300)
 PROBE_JS = """function layoutProbe() {
   const root = document.documentElement;
   root.dataset.viewport = String(window.innerWidth);
+  root.dataset.overflow = String(root.scrollWidth > window.innerWidth);
   root.dataset.cards = String(document.querySelectorAll('.card').length);
   const inside = (node, parent) => {
     const a = node.getBoundingClientRect(), b = parent.getBoundingClientRect();
@@ -82,6 +84,31 @@ class RootAttributes(HTMLParser):
 class QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self, *args):
         pass
+
+
+def wrapper_page(page, width):
+    return ('<!doctype html><html><head><meta charset="utf-8">'
+            '<style>html,body{margin:0}iframe{display:block;border:0}</style>'
+            '</head><body>'
+            f'<iframe src="{page}?layoutcheck=1" style="width:{width}px;height:2400px">'
+            '</iframe></body></html>')
+
+
+def check_result(dom, viewport, width, shot):
+    # Check the live iframe window independently of the probe's DOM attributes.
+    if viewport != width:
+        raise ValueError(f'iframe innerWidth={viewport}, expected {width}')
+    attrs = RootAttributes(dom).attrs
+    expected = {'data-overflow': 'false', 'data-viewport': str(width),
+                'data-scores': 'true', 'data-stats': 'true',
+                'data-actions': 'true', 'data-saved-actions': 'true',
+                'data-images': 'true'}
+    if any(attrs.get(k) != v for k, v in expected.items()) or int(attrs.get('data-cards', 0)) < 4:
+        raise ValueError(f'iframe layout assertions failed: {attrs}')
+    png = shot.read_bytes() if shot.is_file() else b''
+    if (len(png) < 24 or png[:8] != b'\x89PNG\r\n\x1a\n' or png[12:16] != b'IHDR'
+            or struct.unpack('!I', png[16:20])[0] != width):
+        raise ValueError(f'screenshot width does not match {width}')
 
 
 class DevTools:
@@ -134,7 +161,7 @@ class DevTools:
                 return response.get('result', {})
 
 
-def capture(command, profile, width, shot):
+def capture(command, profile, shot):
     active = profile / 'DevToolsActivePort'
     active.unlink(missing_ok=True)
     with (profile.parent / 'chrome.stdout').open('w+') as stdout_file, (profile.parent / 'chrome.stderr').open('w+') as stderr_file, subprocess.Popen(command + ['--remote-debugging-port=0'], stdout=stdout_file,
@@ -145,39 +172,29 @@ def capture(command, profile, width, shot):
                 if process.poll() is not None:
                     stdout_file.seek(0)
                     stderr_file.seek(0)
-                    return (stdout_file.read(), stderr_file.read()), process.returncode
+                    return ({}, stderr_file.read()), process.returncode or 1
                 if time.monotonic() > deadline:
                     raise OSError('Chrome CDP startup timed out')
                 time.sleep(0.05)
             port, path = active.read_text().splitlines()[:2]
             cdp = DevTools(int(port), path)
             try:
-                deadline = time.monotonic() + 30
-                while True:
-                    stdout_file.seek(0)
-                    if '</html>' in stdout_file.read() and shot.is_file():
-                        break
-                    if time.monotonic() > deadline:
-                        raise OSError('Chrome DOM/screenshot capture timed out')
-                    time.sleep(0.05)
-                # Chrome closes its CLI capture tab and clamps native windows
-                # to 500px. Use a fresh tab at the exact CSS viewport for the
-                # final DOM and PNG, keeping the requested CLI capture above.
+                # Native Chrome windows clamp at 500px on macOS. The wrapper
+                # stays wide; the iframe supplies the actual phone viewport.
                 target_id = cdp.call('Target.createTarget', {'url': 'about:blank'})['targetId']
                 session = cdp.call('Target.attachToTarget', {'targetId': target_id, 'flatten': True})['sessionId']
-                cdp.call('Emulation.setDeviceMetricsOverride', {'width': width, 'height': 2400,
-                         'deviceScaleFactor': 1, 'mobile': False}, session)
                 cdp.call('Page.navigate', {'url': next(a for a in command if a.startswith('http://'))}, session)
                 deadline = time.monotonic() + 15
                 while True:
                     result = cdp.call('Runtime.evaluate', {'expression':
-                        "document.documentElement.dataset.cards || ''", 'returnByValue': True}, session)
+                        "document.querySelector('iframe')?.contentDocument?.documentElement.dataset.cards || ''",
+                        'returnByValue': True}, session)
                     if result['result'].get('value'):
                         break
                     if time.monotonic() > deadline:
-                        raise OSError('Exact-width fixture rendering timed out')
+                        raise OSError('Iframe fixture rendering timed out')
                     time.sleep(0.05)
-                measured = cdp.call('Runtime.evaluate', {'expression':
+                probe = (
                     "(async () => { layoutProbe(); const normalActions = document.documentElement.dataset.actions; "
                     "data.items.forEach(i => { favourites.add(i.id); hidden.add(i.id); }); "
                     "showHidden = true; render(); layoutProbe(); "
@@ -186,19 +203,27 @@ def capture(command, profile, width, shot):
                     "await Promise.all([...document.querySelectorAll('.top-card img')].map(i => i.decode().catch(() => {}))); "
                     "await new Promise(resolve => setTimeout(resolve, 50)); layoutProbe(); "
                     "document.documentElement.dataset.savedActions = String(normalActions === 'true' && savedActions === 'true'); "
-                    'return document.documentElement.outerHTML; })()',
+                    'return document.documentElement.outerHTML; })()')
+                measured = cdp.call('Runtime.evaluate', {'expression':
+                    '(async () => { const frame = document.querySelector("iframe"); '
+                    f'const dom = await frame.contentWindow.eval({json.dumps(probe)}); '
+                    'const rect = frame.getBoundingClientRect(); '
+                    'return {dom, viewport: frame.contentWindow.innerWidth, '
+                    'clip: {x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1}}; })()',
                     'returnByValue': True, 'awaitPromise': True}, session)
-                dom = measured['result'].get('value', '')
-                screenshot = cdp.call('Page.captureScreenshot', {'format': 'png'}, session)
+                if 'exceptionDetails' in measured or 'value' not in measured.get('result', {}):
+                    raise OSError(f'Iframe probe failed: {measured}')
+                result = measured['result']['value']
+                screenshot = cdp.call('Page.captureScreenshot', {'format': 'png',
+                    'clip': result.pop('clip'), 'captureBeyondViewport': True}, session)
                 shot.write_bytes(base64.b64decode(screenshot['data']))
-                # A debugging port keeps Chrome alive after its CLI capture.
                 cdp.call('Browser.close')
                 if process.poll() is None:
                     process.terminate()
                 process.wait(timeout=10)
                 stdout_file.seek(0)
                 stderr_file.seek(0)
-                return (dom, stderr_file.read()), 0
+                return (result, stderr_file.read()), 0
             finally:
                 cdp.socket.close()
         finally:
@@ -210,7 +235,7 @@ def capture(command, profile, width, shot):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--chrome', default=CHROME)
-    parser.add_argument('--screenshots', type=Path, default=Path('/tmp'))
+    parser.add_argument('--screenshots', type=Path, default=ROOT / '.state/layoutcheck/screenshots')
     args = parser.parse_args()
     if not Path(args.chrome).is_file():
         print(f'BLOCKED Chrome executable not found: {args.chrome}', file=sys.stderr)
@@ -233,7 +258,11 @@ def main():
         (site / 'broken.png').write_text('Deliberately corrupt image fixture')
         for page in site.glob('*.html'):
             page.write_text(page.read_text().replace('</body>', PROBE + '</body>'))
-        server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(site)))
+        try:
+            server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(site)))
+        except OSError as exc:
+            print(f'BLOCKED local fixture server: {exc}', file=sys.stderr)
+            return 1
         port = server.server_port
         for data in (site / 'data').glob('*.json'):
             data.write_text(data.read_text().replace(':PORT/', f':{port}/'))
@@ -242,30 +271,25 @@ def main():
         try:
             for page in ('index.html', 'hn.html'):
                 for width in WIDTHS:
+                    wrapper = f'layout-{page[:-5]}-{width}.html'
+                    (site / wrapper).write_text(wrapper_page(page, width))
                     shot = args.screenshots / f'ozb-layout-{page[:-5]}-{width}.png'
                     shot.unlink(missing_ok=True)
-                    command = [args.chrome, '--headless=new', f'--window-size={width},2400',
-                               '--virtual-time-budget=5000', '--dump-dom', f'--screenshot={shot}',
+                    command = [args.chrome, '--headless=new', '--window-size=1400,2600',
                                f'--user-data-dir={work / "chrome-profile"}', '--no-first-run',
                                '--no-default-browser-check', '--disable-background-networking',
                                '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
-                               f'http://127.0.0.1:{port}/{page}?layoutcheck=1']
-                    (stdout, stderr), code = capture(command, work / 'chrome-profile', width, shot)
+                               f'http://127.0.0.1:{port}/{wrapper}']
+                    (result, stderr), code = capture(command, work / 'chrome-profile', shot)
                     if code:
                         print(f'BLOCKED Chrome failed to launch/run (exit {code}): {stderr[-2000:]}', file=sys.stderr)
                         return 1
-                    attrs = RootAttributes(stdout).attrs
-                    expected = {'data-overflow': 'false', 'data-viewport': str(width),
-                                'data-scores': 'true', 'data-stats': 'true',
-                                'data-actions': 'true', 'data-saved-actions': 'true',
-                                'data-images': 'true'}
-                    if any(attrs.get(k) != v for k, v in expected.items()) or int(attrs.get('data-cards', 0)) < 4 or not shot.is_file():
-                        print(f'FAIL {page} width={width}: {attrs}', file=sys.stderr)
+                    try:
+                        check_result(result['dom'], result['viewport'], width, shot)
+                    except ValueError as exc:
+                        print(f'FAIL {page} width={width}: {exc}', file=sys.stderr)
                         return 1
-                    if struct.unpack('!I', shot.read_bytes()[16:20])[0] != width:
-                        print(f'FAIL screenshot width does not match {width}', file=sys.stderr)
-                        return 1
-                    print(f'PASS {page} width={width}: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot={shot}')
+                    print(f'PASS {page} width={width} iframe.innerWidth={result["viewport"]}: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot={shot}')
         except (OSError, subprocess.TimeoutExpired) as exc:
             print(f'BLOCKED Chrome check: {exc}', file=sys.stderr)
             return 1

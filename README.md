@@ -23,7 +23,7 @@ python3 -m http.server 8000 --directory site
 python3 scripts/check_layout.py
 ```
 
-需要本机 Google Chrome，默认路径为 macOS 的 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`，可用 `--chrome` 覆盖。脚本独立构建并服务离线 fixtures，检查两页在 360 / 375 / 390 / 1300px 下的溢出、分数、统计、按钮和图片失败占位；不请求外部图片或 feed。截图保存在 `/tmp/ozb-layout-*.png`，可用 `--screenshots` 改目录。Chrome 若被沙箱阻止，需要在获准的沙箱外环境运行；启动失败会明确报错。
+需要本机 Google Chrome，默认路径为 macOS 的 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`，可用 `--chrome` 覆盖。脚本独立构建并服务离线 fixtures，将两页放入同源 iframe，检查 360 / 375 / 390 / 1300px 下的溢出、分数、统计、按钮和图片失败占位；同时断言 iframe 的实际 `innerWidth` 和截图宽度等于目标值，避免 macOS Chrome 最小窗口宽度影响手机测试。不请求外部图片或 feed。截图保存在仓库内 `.state/layoutcheck/screenshots/ozb-layout-*.png`，可用 `--screenshots` 改目录。Chrome 或本地服务若被沙箱阻止，需要在获准的沙箱外环境运行；启动失败会明确报错。
 
 真实采样（不要频繁运行）：
 
