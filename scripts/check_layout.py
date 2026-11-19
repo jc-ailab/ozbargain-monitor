@@ -55,8 +55,17 @@ PROBE_JS = """function layoutProbe() {
         width: rects[i].width, scroll: c.scrollWidth, client: c.clientWidth}))});
     return valid;
   }));
+  const thumbs = [...document.querySelectorAll('.top-card .thumbnail')];
+  const states = thumbs.map(n => n.dataset.imageState).sort().join(',');
+  root.dataset.images = String(states === 'failed,loaded,missing' && thumbs.every(n => {
+    const letter = n.querySelector('.thumb-letter'), image = n.querySelector('img');
+    return letter.textContent.trim() && (n.dataset.imageState === 'loaded'
+      ? image.naturalWidth > 0 && getComputedStyle(letter).visibility === 'hidden'
+      : getComputedStyle(letter).visibility === 'visible' && (!image || image.hidden));
+  }));
 }"""
-PROBE = '<script>' + PROBE_JS + '; setTimeout(layoutProbe, 1000);</script>'
+PROBE = ('<style>*{animation:none!important;transition:none!important}</style><script>'
+         + PROBE_JS + '; setTimeout(layoutProbe, 1000);</script>')
 
 
 class RootAttributes(HTMLParser):
@@ -143,18 +152,6 @@ def capture(command, profile, width, shot):
             port, path = active.read_text().splitlines()[:2]
             cdp = DevTools(int(port), path)
             try:
-                target = None
-                while target is None:
-                    targets = cdp.call('Target.getTargets')['targetInfos']
-                    target = next((t for t in targets if t['type'] == 'page'
-                                   and t['url'].startswith('http://127.0.0.1:')), None)
-                    if time.monotonic() > deadline:
-                        raise OSError(f'Chrome page target startup timed out: {targets}')
-                    if target is None:
-                        time.sleep(0.05)
-                session = cdp.call('Target.attachToTarget', {'targetId': target['targetId'], 'flatten': True})['sessionId']
-                cdp.call('Emulation.setDeviceMetricsOverride', {'width': width, 'height': 2400,
-                         'deviceScaleFactor': 1, 'mobile': False}, session)
                 deadline = time.monotonic() + 30
                 while True:
                     stdout_file.seek(0)
@@ -181,14 +178,16 @@ def capture(command, profile, width, shot):
                         raise OSError('Exact-width fixture rendering timed out')
                     time.sleep(0.05)
                 measured = cdp.call('Runtime.evaluate', {'expression':
-                    "layoutProbe(); const normalActions = document.documentElement.dataset.actions; "
+                    "(async () => { layoutProbe(); const normalActions = document.documentElement.dataset.actions; "
                     "data.items.forEach(i => { favourites.add(i.id); hidden.add(i.id); }); "
                     "showHidden = true; render(); layoutProbe(); "
                     "const savedActions = document.documentElement.dataset.actions; "
-                    "favourites.clear(); hidden.clear(); showHidden = false; render(); layoutProbe(); "
+                    "favourites.clear(); hidden.clear(); showHidden = false; render(); "
+                    "await Promise.all([...document.querySelectorAll('.top-card img')].map(i => i.decode().catch(() => {}))); "
+                    "await new Promise(resolve => setTimeout(resolve, 50)); layoutProbe(); "
                     "document.documentElement.dataset.savedActions = String(normalActions === 'true' && savedActions === 'true'); "
-                    'document.documentElement.outerHTML',
-                    'returnByValue': True}, session)
+                    'return document.documentElement.outerHTML; })()',
+                    'returnByValue': True, 'awaitPromise': True}, session)
                 dom = measured['result'].get('value', '')
                 screenshot = cdp.call('Page.captureScreenshot', {'format': 'png'}, session)
                 shot.write_bytes(base64.b64decode(screenshot['data']))
@@ -225,12 +224,13 @@ def main():
         shutil.copytree(ROOT / 'site', site, ignore=shutil.ignore_patterns('data'))
         for monitor in ('ozbargain', 'hackernews'):
             document = run(monitor, work / monitor, site, ROOT / 'tests/fixtures')
-            # Replace external images with a local, deterministic fixture asset.
-            for item in document['items']:
-                if item['image']:
-                    item['image'] = 'http://127.0.0.1:PORT/thumb.svg'
+            # Top 3 (and list) exercise successful, corrupt and absent images.
+            for n, item in enumerate(document['items']):
+                item['image'] = ('http://127.0.0.1:PORT/thumb.svg',
+                                 'http://127.0.0.1:PORT/broken.png', '')[n % 3]
             store.save(site / 'data' / f'{monitor}.json', document)
         (site / 'thumb.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg" width="58" height="58"><rect width="58" height="58" fill="#ddd"/></svg>')
+        (site / 'broken.png').write_text('Deliberately corrupt image fixture')
         for page in site.glob('*.html'):
             page.write_text(page.read_text().replace('</body>', PROBE + '</body>'))
         server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(site)))
@@ -257,14 +257,15 @@ def main():
                     attrs = RootAttributes(stdout).attrs
                     expected = {'data-overflow': 'false', 'data-viewport': str(width),
                                 'data-scores': 'true', 'data-stats': 'true',
-                                'data-actions': 'true', 'data-saved-actions': 'true'}
+                                'data-actions': 'true', 'data-saved-actions': 'true',
+                                'data-images': 'true'}
                     if any(attrs.get(k) != v for k, v in expected.items()) or int(attrs.get('data-cards', 0)) < 4 or not shot.is_file():
                         print(f'FAIL {page} width={width}: {attrs}', file=sys.stderr)
                         return 1
                     if struct.unpack('!I', shot.read_bytes()[16:20])[0] != width:
                         print(f'FAIL screenshot width does not match {width}', file=sys.stderr)
                         return 1
-                    print(f'PASS {page} width={width}: overflow=false; scores/stats/actions fit (default + saved); screenshot={shot}')
+                    print(f'PASS {page} width={width}: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot={shot}')
         except (OSError, subprocess.TimeoutExpired) as exc:
             print(f'BLOCKED Chrome check: {exc}', file=sys.stderr)
             return 1

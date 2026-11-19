@@ -21,6 +21,21 @@ async function check(monitor, storageUnavailable) {
   assert.equal(nodes.title.textContent, source.title);
   assert.equal(vm.runInContext('compactNumber(1620)', context), '1.6K');
   assert.equal(vm.runInContext('compactNumber(39.6)', context), '39.6');
+  assert.match(vm.runInContext("thumbnail({category: 'Books', item_url: '', image: ''})", context), /data-image-state="missing"[^>]*><span class="thumb-letter">B/);
+  assert.match(vm.runInContext("thumbnail({category: 'Books', item_url: 'https://www.amazon.com.au/x', image: ''})", context), /thumb-letter">A/);
+  assert.doesNotMatch(vm.runInContext("thumbnail({category: 'Books', image: 'javascript:alert(1)'})", context), /<img/);
+  assert.match(vm.runInContext("thumbnail({category: '<bad>', image: ''})", context), /thumb-letter">&lt;/);
+  const img = {matches: selector => selector === 'img.thumb-image', naturalWidth: 0, parentElement: {dataset: {}}};
+  document.listeners.error({type: 'error', target: img});
+  assert.equal(img.parentElement.dataset.imageState, 'failed');
+  assert.equal(img.hidden, true);
+  img.naturalWidth = 58;
+  document.listeners.load({type: 'load', target: img});
+  assert.equal(img.parentElement.dataset.imageState, 'loaded');
+  assert.equal(img.hidden, false);
+  img.naturalWidth = 0;
+  document.listeners.load({type: 'load', target: img});
+  assert.equal(img.parentElement.dataset.imageState, 'failed');
   for (const rank of [0, 1]) {
     assert.match(vm.runInContext(`card({...data.items[0], watch_hit: [], in_current_feed: false}, ${rank})`, context), /已离开 feed · 数据截至/);
     assert.doesNotMatch(vm.runInContext(`card({...data.items[0], watch_hit: [], in_current_feed: true}, ${rank})`, context), /已离开 feed/);
@@ -61,6 +76,6 @@ async function check(monitor, storageUnavailable) {
   assert.equal(nodes['deal-list'].innerHTML, before);
   assert.match(nodes.notice.textContent, /更新暂时失败/);
   if (storageUnavailable) assert.match(nodes.notice.textContent, /存储不可用/);
-  console.log(`PASS ${monitor}: render, filters, settings, favourites, hide, error retention; storage=${!storageUnavailable}`);
+  console.log(`PASS ${monitor}: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback; storage=${!storageUnavailable}`);
 }
 (async () => { for (const m of ['ozbargain', 'hackernews']) for (const noStore of [false, true]) await check(m, noStore); })().catch(error => { console.error(error); process.exitCode = 1; });

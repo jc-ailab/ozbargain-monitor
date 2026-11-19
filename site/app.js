@@ -76,12 +76,29 @@ function sparkline(points) {
   const coords = values.map((v, n) => `${(2 + (times[n] - times[0]) / duration * 106).toFixed(1)},${(27 - (v - low) / span * 24).toFixed(1)}`).join(' ');
   return `<svg class="sparkline" viewBox="0 0 110 30" role="img" aria-label="净票数趋势：${escapeHTML(values[0])} 到 ${escapeHTML(values[values.length - 1])}"><polyline points="${coords}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>净票数趋势</span>`;
 }
+function thumbnail(item) {
+  const image = safeURL(item.image);
+  let label = item.category || monitor;
+  try { if (safeURL(item.item_url)) label = new URL(item.item_url).hostname.replace(/^www\./, ''); }
+  catch (_) { /* Category remains a useful fallback for missing merchant URLs. */ }
+  const letter = Array.from(label.trim())[0]?.toUpperCase() || '?';
+  return `<span class="thumb thumbnail" data-image-state="${image ? 'loading' : 'missing'}" aria-hidden="true"><span class="thumb-letter">${escapeHTML(letter)}</span>${image ? `<img class="thumb-image" src="${image}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}</span>`;
+}
+function imageState(event) {
+  const img = event.target;
+  if (!img.matches?.('img.thumb-image')) return;
+  const loaded = event.type === 'load' && img.naturalWidth > 0;
+  img.parentElement.dataset.imageState = loaded ? 'loaded' : 'failed';
+  img.hidden = !loaded;
+}
+// Image load/error do not bubble; capture also handles dynamically rendered cards.
+document.addEventListener('error', imageState, true);
+document.addEventListener('load', imageState, true);
 function card(item, rank = 0) {
   const h = escapeHTML, m = item.metrics, net = m.votes_pos - m.votes_neg;
   const chip = (text, css = '') => `<span class="chip ${css}">${h(text)}</span>`;
   const flagLabels = {expired: '过期', upcoming: '即将开始', targeted: '仅限部分用户', 'out-of-stock': '缺货'};
   const chips = (item.tier ? chip(tiers[item.tier], 'tier') : '') + (bursting(item) ? chip('正在爆发', 'burst') : '') + (item.is_free ? chip('免费', 'free') : '') + (item.on_front_page ? chip('首页') : '') + item.flags.map(f => chip(flagLabels[f] || f)).join('') + (item.blocked ? chip('已屏蔽') : '') + (hidden.has(item.id) ? chip('已隐藏') : '') + item.watch_hit.map(w => chip(`关注 · ${w}`, 'tier')).join('');
-  const image = safeURL(item.image);
   const title = `<h3><a href="${safeURL(item.url)}" target="_blank" rel="noopener noreferrer">${h(item.title)}</a></h3><div class="chips">${chips}</div>`;
   const score = `<div class="score"><strong>${h(item.score)}</strong><small>热度分 / 100</small></div>`;
   const ai = item.summary ? `<div class="summary"><span class="ai-label">AI 摘要</span>${h(item.summary.one_liner)}${item.summary.caveat ? `<p class="caveat">留意：${h(item.summary.caveat)}</p>` : ''}</div>` : '';
@@ -91,7 +108,7 @@ function card(item, rank = 0) {
   const breakdown = `<details class="breakdown"><summary>这个分数怎么算？</summary><p>对数归一化后按权重相加，最高 100 分。</p>${Object.entries(item.breakdown).map(([key, value]) => `<div class="component"><span>${h(names[key] || key)}</span><progress max="${h(value.weight)}" value="${h(value.points)}" aria-label="${h(names[key] || key)}得分"></progress><span>${h(value.points)} / ${h(value.weight)}</span></div>`).join('')}</details>`;
   const merchant = monitor === 'ozbargain' && safeURL(item.item_url) ? `<a class="merchant" href="${safeURL(item.item_url)}" target="_blank" rel="noopener noreferrer">去商家 ↗</a>` : '';
   const article = monitor === 'hackernews' && safeURL(item.item_url) ? `<a href="${safeURL(item.item_url)}" target="_blank" rel="noopener noreferrer">读原文 ↗</a>` : '';
-  return `<article class="card ${rank ? 'top-card' : ''} ${isExpired(item) ? 'expired' : ''}">${rank ? `<div class="card-top"><span class="rank"><b>${rank}</b> 热度精选</span>${score}</div>` : ''}<div class="card-main ${image ? 'has-image' : ''}">${image ? `<img class="thumb" src="${image}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}<div>${title}</div>${rank ? '' : score}</div><div class="metrics"><span>票数 <b>${h(net)}</b></span><span>评论 <b>${h(m.comments)}</b></span>${monitor === 'ozbargain' ? `<span>点击 <b>${h(m.clicks)}</b></span>` : ''}</div>${jump}${lastObserved}${ai}${rank ? '' : `<p class="posted">${h(relative(item.posted_at))}发布${item.category ? ` · ${h(item.category)}` : ''}${item.expiry ? ` · 截止 ${h(sydney(item.expiry))}（悉尼）` : ''}${item.starting ? ` · 开始 ${h(sydney(item.starting))}（悉尼）` : ''}</p><div class="trend-line">${sparkline(item.trend)}</div>${breakdown}`}<div class="card-actions">${merchant}${article}<a href="${safeURL(item.url)}" target="_blank" rel="noopener noreferrer">看帖子 ↗</a><button data-action="favourite" data-id="${h(item.id)}" aria-pressed="${favourites.has(item.id)}" aria-label="${favourites.has(item.id) ? '取消收藏' : '收藏'} ${h(item.title)}">${favourites.has(item.id) ? '★ 已收藏' : '☆ 收藏'}</button><button data-action="hide" data-id="${h(item.id)}">${hidden.has(item.id) ? '取消隐藏' : '隐藏'}</button></div></article>`;
+  return `<article class="card ${rank ? 'top-card' : ''} ${isExpired(item) ? 'expired' : ''}">${rank ? `<div class="card-top"><span class="rank"><b>${rank}</b> 热度精选</span>${score}</div>` : ''}<div class="card-main has-image">${thumbnail(item)}<div>${title}</div>${rank ? '' : score}</div><div class="metrics"><span>票数 <b>${h(net)}</b></span><span>评论 <b>${h(m.comments)}</b></span>${monitor === 'ozbargain' ? `<span>点击 <b>${h(m.clicks)}</b></span>` : ''}</div>${jump}${lastObserved}${ai}${rank ? '' : `<p class="posted">${h(relative(item.posted_at))}发布${item.category ? ` · ${h(item.category)}` : ''}${item.expiry ? ` · 截止 ${h(sydney(item.expiry))}（悉尼）` : ''}${item.starting ? ` · 开始 ${h(sydney(item.starting))}（悉尼）` : ''}</p><div class="trend-line">${sparkline(item.trend)}</div>${breakdown}`}<div class="card-actions">${merchant}${article}<a href="${safeURL(item.url)}" target="_blank" rel="noopener noreferrer">看帖子 ↗</a><button data-action="favourite" data-id="${h(item.id)}" aria-pressed="${favourites.has(item.id)}" aria-label="${favourites.has(item.id) ? '取消收藏' : '收藏'} ${h(item.title)}">${favourites.has(item.id) ? '★ 已收藏' : '☆ 收藏'}</button><button data-action="hide" data-id="${h(item.id)}">${hidden.has(item.id) ? '取消隐藏' : '隐藏'}</button></div></article>`;
 }
 function notice() {
   const warnings = [];
