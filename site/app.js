@@ -36,6 +36,9 @@ function relative(value) {
   if (minutes < 1440) return `${Math.floor(minutes / 60)} 小时前`;
   return `${Math.floor(minutes / 1440)} 天前`;
 }
+function compactNumber(value) {
+  return new Intl.NumberFormat('en', {notation: 'compact', maximumFractionDigits: 1}).format(value);
+}
 function sydney(value) {
   if (!value || !Number.isFinite(Date.parse(value))) return '尚无成功采样';
   return new Intl.DateTimeFormat('zh-CN', {timeZone: 'Australia/Sydney', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false}).format(new Date(value));
@@ -104,7 +107,7 @@ function render() {
   document.title = data.title;
   $('updated').textContent = `更新于 ${sydney(data.generated_at)}（悉尼） · ${data.generated_at ? relative(data.generated_at) : '等待采样'}`;
   const stats = [['total', '帖子总数'], ['viral', '爆火'], ['hot', '热门'], ['rising', '升温'], ['free', '免费'], ['bursting', '正在爆发'], ['avg_score', '平均分'], ['total_votes', '总票数'], ['total_comments', '总评论']];
-  $('stats').innerHTML = stats.map(([key, label]) => `<div class="stat ${['viral', 'bursting'].includes(key) ? 'accent' : ''}"><strong>${escapeHTML(data.stats[key])}</strong><span>${label}</span></div>`).join('');
+  $('stats').innerHTML = stats.map(([key, label]) => `<div class="stat ${['viral', 'bursting'].includes(key) ? 'accent' : ''}"><strong>${escapeHTML(compactNumber(data.stats[key]))}</strong><span>${label}</span></div>`).join('');
   $('digest-box').hidden = !data.digest?.text;
   $('digest-text').textContent = data.digest?.text || '';
   $('filters').innerHTML = filterOptions.map(([key, label]) => `<button data-filter="${key}" aria-pressed="${key === filter}">${label}</button>`).join('');
@@ -122,6 +125,9 @@ function render() {
   $('hidden-toggle').textContent = `已隐藏 ${hiddenCount} 条 · ${showHidden ? '收起' : '显示'}`;
   $('hidden-toggle').setAttribute('aria-pressed', String(showHidden));
   notice();
+  if (new URL(window.location.href).searchParams.get('layoutcheck') === '1') {
+    document.documentElement.dataset.overflow = String(document.documentElement.scrollWidth > window.innerWidth);
+  }
 }
 async function load() {
   try {

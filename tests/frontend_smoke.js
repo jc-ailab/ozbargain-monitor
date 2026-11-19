@@ -15,10 +15,12 @@ async function check(monitor, storageUnavailable) {
   const localStorage = {getItem() { if (storageUnavailable) throw Error('denied'); return null; }, setItem() { if (storageUnavailable) throw Error('denied'); }};
   let fail = false;
   const intervals = [];
-  const context = vm.createContext({document, localStorage, URL, Intl, Date, console, setInterval(fn, ms) { intervals.push(ms); }, fetch: async () => { if (fail) throw Error('offline'); return {ok: true, json: async () => source}; }});
+  const context = vm.createContext({window: {location: {href: 'http://localhost/'}}, document, localStorage, URL, Intl, Date, console, setInterval(fn, ms) { intervals.push(ms); }, fetch: async () => { if (fail) throw Error('offline'); return {ok: true, json: async () => source}; }});
   vm.runInContext(fs.readFileSync(path.join(root, 'site/app.js'), 'utf8'), context);
   await vm.runInContext('load()', context);
   assert.equal(nodes.title.textContent, source.title);
+  assert.equal(vm.runInContext('compactNumber(1620)', context), '1.6K');
+  assert.equal(vm.runInContext('compactNumber(39.6)', context), '39.6');
   assert.match(nodes['deal-list'].innerHTML, /<article/);
   assert.match(nodes['top-list'].innerHTML, /热度精选/);
   assert.equal(nodes['deal-list'].innerHTML.includes('去商家'), monitor === 'ozbargain');
