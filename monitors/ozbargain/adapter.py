@@ -12,6 +12,21 @@ FEEDS = {
 }
 
 
+def free_deal(title, free_category=False):
+    if free_category:
+        return True
+    # Remove even nested parentheses, including alternate prices and pickup fees.
+    main = title
+    while re.search(r'\([^()]*\)', main):
+        main = re.sub(r'\([^()]*\)', ' ', main)
+    main = re.split(r'\+\s*(?:delivery|shipping|postage)\b', main, maxsplit=1, flags=re.I)[0]
+    if re.search(r'\bfree\b(?![\s:–—-]*(?:delivery|shipping|postage|returns)\b)', main, re.I):
+        return True
+    # The first advertised price is the main price, not a later $0 add-on.
+    price = re.search(r'\$(\d+(?:\.\d+)?)(?![\d.])', main)
+    return bool(price and price.group(1) in ('0', '0.00'))
+
+
 def parse(root, feed='deals'):
     result = []
     for node in root.findall('./channel/item'):
@@ -30,7 +45,7 @@ def parse(root, feed='deals'):
                 domain, text = cat.get('domain', ''), cat.text or ''
                 if '/cat/' in domain:
                     category = text
-                    free_category |= domain.rstrip('/').endswith('/freebies')
+                    free_category |= domain.rstrip('/').endswith('/freebies') or text.strip().casefold() == 'freebies'
                 elif '/tag/' in domain:
                     tags.append(text)
                 elif '/event/' in domain:
@@ -48,7 +63,7 @@ def parse(root, feed='deals'):
                        'creator': node.findtext('dc:creator', '', NS),
                        'expiry': attrs.get('expiry', ''), 'starting': attrs.get('starting', ''),
                        'on_front_page': feed == 'front',
-                       'is_free': bool(re.search(r'\bfree\b|\$0\b', title, re.I) or free_category)}))
+                       'is_free': free_deal(title, free_category)}))
         except Exception as exc:
             logging.getLogger(__name__).warning('Skipping malformed RSS item: %s', exc)
     return result

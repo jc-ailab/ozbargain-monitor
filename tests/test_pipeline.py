@@ -76,6 +76,30 @@ class AdapterTests(unittest.TestCase):
         self.assertTrue(parse(root)[0].extra['is_free'])
         self.assertIn('expired', parse(root)[0].flags)
 
+    def test_free_deal_main_offer_only(self):
+        cases = {
+            'Westinghouse 10kg Front Load Washer $645 ($632 via Price-Check Button) + Delivery ($0 C&C)': False,
+            'Muscle Nation Vegan Protein Bar 12-Pack $24 (RRP $54) + Delivery ($0 Prime/$59 Spend) @ Am': False,
+            '[PC, Epic] Free - Bread and Fred @ Epic Games': True,
+            '[eBook] Free - Throne Hunters Books 1-5 by Phil Tucker @ Amazon AU & US': True,
+            'Free Delivery on All Orders @ X': False,
+            'Free Shipping @ X': False,
+            'Free Postage @ X': False,
+            'Shoes $40 with Free Returns': False,
+            'Coffee $0.00 + Shipping': True,
+            'Coffee $0.50': False,
+            'Coffee $0.99': False,
+            'Coffee $10 (Free Gift ($0))': False,
+            'Coffee $10 + Postage $0': False,
+            'Coffee $10 + Shipping Free': False,
+            'Coffee $10 + $0 Membership': False,
+        }
+        root = ET.parse(FIXTURES / 'deals_feed.xml').getroot()
+        for title, expected in cases.items():
+            with self.subTest(title=title):
+                root.find('./channel/item/title').text = title
+                self.assertEqual(parse(root)[0].extra['is_free'], expected)
+
     def test_hn(self):
         source = HNSource(FIXTURES)
         items = source.fetch()
