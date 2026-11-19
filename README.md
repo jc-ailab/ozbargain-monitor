@@ -56,9 +56,11 @@ python3 scripts/run.py --monitor hackernews --state-dir .state/live/hackernews -
 
 修改 `monitors/<name>/config.json` 可改权重、阈值、默认关键词、展示时限（`display_hours`，默认 36 小时）、保留天数及 AI 模型；[新增监控指南](docs/NEW_MONITOR.md) 使用 HN 展示完整复用过程。HN 的 points 映射为赞成票，点击为 0，不显示商家按钮。
 
-GitHub Actions 在每小时第 7、37 分钟运行；修改代码 / 页面并推到 main 或手动 dispatch 也会运行。`state` 分支使用单个 amended commit 保存历史及上次发布结果；不要用该分支保存手工内容。仓库变量 `STOP_DATE` 默认 `2027-01-01`，到该悉尼日期后定时运行跳过；手动运行仍可用。第一次运行会创建 state 分支。Pages 必须允许 Actions 部署，仓库策略也必须允许 `models: read` 和 state 分支写入。
+GitHub Actions 在每小时第 7、37 分钟运行；修改代码 / 页面并推到 main 或手动 dispatch 也会运行。`state` 分支使用单个 amended commit 保存历史及上次发布结果；不要用该分支保存手工内容。仓库变量 `STOP_DATE` 默认 `2027-01-01`，到该悉尼日期后定时运行跳过；手动运行仍可用。第一次运行会创建 state 分支。Pages 必须允许 Actions 部署，仓库策略也必须允许 state 分支写入。
 
-没有 `GITHUB_TOKEN` 就跳过 AI。Actions 仅用内置 token 请求 GitHub Models，每轮最多摘要 8 条候选帖子，缓存成功结果；Top 3 集合变化时最多请求一次 120 字速览。限流 / 模型不可用会保留原始数据，下一轮再试。内容仅为 RSS 提供的有限信息。
+AI 默认关闭：两个 monitor 的 `summary.provider` 都是 `"none"`。如需启用，改为 `"gemini"`，并在 Actions secrets 设置 `GEMINI_API_KEY`；本地运行从同名环境变量读取。`summary.model` 默认 `gemini-3.8-flash`，可自行配置。使用官方 [Gemini REST generateContent](https://ai.google.dev/api/generate-content) 的 JSON 模式，不使用 GitHub Models，也不需要 Models 权限。provider 为 none 或缺少 key 时只记录一行，零 AI 网络请求；fixture 模式始终关闭 AI。
+
+每个 monitor 每轮最多摘要 8 条候选帖子，缓存成功结果；Top 3 集合变化时最多请求一次 120 字速览。任意一次 AI 调用失败（HTTP、超时、非 JSON、结构或长度不合格），立即停止该轮剩余的摘要及速览调用，无模型回退或重试，下一轮再试。已有成功缓存和原始 RSS 数据保留。内容仅为 RSS 提供的有限信息。
 
 单个 feed 失败保留之前数据，状态写在 JSON 的 `stats.feeds`。全部失败时保留上次成功时间，页面超过 90 分钟会警告。页面仅发布最近 36 小时见过的帖子，统计也只计算这些帖子；本轮未见的卡片标注「已离开 feed」及最后采样时间。历史仍保留 7 天，每条最多 96 个快照，输出趋势最多 24 点；JSON 控制在 1.5 MB 内。页面每 10 分钟重新读取 JSON，无需整页刷新。
 

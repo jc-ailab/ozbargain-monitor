@@ -13,7 +13,7 @@ Side project. The CBA mainline is not affected (EOI submitted 2026-11-20). Rule:
 - Claude (architect/reviewer): spec, technical choices, review and acceptance testing, merge.
 - Codex (implementer): implementation inside the spec. Never approves its own code.
 - Tracy (PO): product direction, anything public beyond this repo, new paid services, new credentials, deleting the repo.
-- No secrets in the repo. AI summaries use GitHub Models with the built-in `GITHUB_TOKEN` only.
+- No secrets in the repo. Review 4 supersedes the original GitHub Models choice: summaries default to `none`; optional Gemini reads `GEMINI_API_KEY` from the environment / Actions secret. This implementation adds no credential or paid service.
 
 ## Working habits
 - Spec in `docs/spec/`, implementation report in `docs/reports/`, review in `docs/reviews/`.

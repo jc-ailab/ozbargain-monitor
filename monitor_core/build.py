@@ -53,7 +53,7 @@ def run(monitor, state_dir, out, fixtures=None, now=None):
     output.sort(key=lambda x: ('expired' in x['flags'], -x['score'], x['id']))
     if seen:
         try:
-            summarize.enrich(output, state, config, token='' if fixtures else None)
+            summarize.enrich(output, state, config, api_key='' if fixtures else None)
         except Exception as exc:
             logging.getLogger(__name__).warning('AI enrichment unavailable: %s', type(exc).__name__)
     stats = {'total': len(output), **{tier: sum(i['tier'] == tier for i in output) for tier in ('viral', 'hot', 'rising')},

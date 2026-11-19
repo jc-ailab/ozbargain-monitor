@@ -49,4 +49,4 @@ Check that `http://localhost:8000/data/example.json` loads and that every JS ele
 
 Actions checks out main and a separate orphan `state` worktree. It preserves each monitor's `state.json` and previous published JSON, runs offline tests and both pipelines, then amends and force-pushes a **single state commit** before publishing Pages. Feed failures retain previous records and expose health in the JSON. Unexpected pipeline failures use `scripts/fallback.py` to annotate the previous publication or emit an explicit empty first-run error document.
 
-Use only built-in `GITHUB_TOKEN`; no new credentials or paid services. The Sydney `STOP_DATE` guard applies to scheduled runs only. Extending the schedule or publishing beyond this repository requires the Owner's decision under the charter.
+AI defaults to `summary.provider: "none"`. Optional `gemini` uses an externally supplied `GEMINI_API_KEY`; never commit keys or create credentials / paid services as part of adding a monitor. The Sydney `STOP_DATE` guard applies to scheduled runs only. Extending the schedule or publishing beyond this repository requires the Owner's decision under the charter.

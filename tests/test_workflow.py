@@ -27,6 +27,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('artifact_name: github-pages', deploy)
         self.assertIn('url: ${{ steps.deployment.outputs.page_url }}', text)
 
+    def test_gemini_secret_without_models_permission(self):
+        text = (ROOT / '.github/workflows/monitor.yml').read_text()
+        self.assertIn('GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}', text)
+        self.assertNotIn('models: read', text)
+        self.assertNotIn('GITHUB_TOKEN:', text)
+
     def test_sydney_stop_guard(self):
         text = (ROOT / '.github/workflows/monitor.yml').read_text()
         guard = re.search(r"python3 - <<'PY'\n(.*?)\n          PY", text, re.S)[1]
@@ -37,7 +43,7 @@ class WorkflowTests(unittest.TestCase):
                 result = subprocess.run([sys.executable, '-c', code], env={**os.environ, 'EVENT_NAME': event, 'STOP_DATE': stop, 'GITHUB_OUTPUT': str(out)}, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(out.read_text().strip(), 'proceed=' + expected)
-        for required in ("7,37 * * * *", 'models: read', 'cancel-in-progress: false', 'commit --amend --no-edit', 'push --force origin HEAD:state', 'upload-pages-artifact', 'deploy-pages', 'python-version: \'3.12\''):
+        for required in ("7,37 * * * *", 'cancel-in-progress: false', 'commit --amend --no-edit', 'push --force origin HEAD:state', 'upload-pages-artifact', 'deploy-pages', 'python-version: \'3.12\''):
             self.assertIn(required, text)
 
     def test_publish_fallback_first_run_and_previous(self):

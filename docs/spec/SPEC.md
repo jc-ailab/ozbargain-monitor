@@ -14,7 +14,7 @@ UI language: Simplified Chinese (product and deal titles stay in English). Code,
 1. **Python 3.12 standard library only** for the pipeline (urllib, xml.etree, json, unittest, etc.). No pip dependencies. Frontend: vanilla HTML/CSS/JS, no build step, no framework, no CDN.
 2. **Data source = official RSS only**: `https://www.ozbargain.com.au/deals/feed` (new) and `https://www.ozbargain.com.au/feed` (front page). Never fetch `/api/`, `/goto/`, `/search/`, `/comment/`, `/ozbapi/` (robots.txt). At most 2 feed requests per run. User-Agent: `ozbargain-monitor/1.0 (+https://github.com/jc-ailab/ozbargain-monitor)`. Timeout 20 s, one retry.
 3. The page links to the deal's OzBargain node page and to the merchant URL from `ozb:meta url` (not the /goto/ link).
-4. No secrets. The only token used is the workflow's built-in `GITHUB_TOKEN`.
+4. No secrets in the repo. Optional Gemini reads `GEMINI_API_KEY` from the environment / Actions secret; summaries are off by default.
 5. All tests run offline from fixtures in `tests/fixtures/`: `python -m unittest discover -s tests` must pass.
 6. Never crash the whole run because one item, one feed or the AI summary fails. Degrade, log a warning, keep the last good data.
 
@@ -27,7 +27,7 @@ monitor_core/          # reusable, knows nothing about OzBargain
   source.py            # Source protocol: fetch() -> list[Item]
   store.py             # snapshot history: load/save state JSON, append snapshot, prune
   scoring.py           # config-driven weighted score + burst + tiers
-  summarize.py         # optional AI summary via GitHub Models, cached by item id
+  summarize.py         # optional pluggable AI summary, cached by item id
   build.py             # run pipeline for one monitor config -> writes site data JSON
   rss.py               # small shared RSS helpers
 monitors/
@@ -92,12 +92,15 @@ Expired items: keep in data, flagged, sorted after active ones by default, and n
 
 Watch keywords: item matches if title/tags contain any (case-insensitive) -> `watch_hit: [keywords]`. Block keywords: item gets `blocked: true` (hidden by default in UI, toggle to show). Keyword defaults live in config; the UI lets the viewer override them in localStorage.
 
-## 6. AI summary (GitHub Models, free)
+## 6. AI summary (optional provider, off by default)
 
-- Endpoint `https://models.github.ai/inference/chat/completions`, auth `Bearer $GITHUB_TOKEN`, workflow permission `models: read`. Model id from config, default `openai/gpt-4.1-mini`; fallback list in config.
+Review 4 supersedes the original GitHub Models design after the live run returned a non-JSON placeholder. The review records its retirement on 2026-07-30; no retired endpoint is called by this implementation.
+
+- Config `summary.provider`: `"none"` (default) or `"gemini"`. Gemini uses the official REST `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`, `x-goog-api-key` from env `GEMINI_API_KEY`, and `generationConfig.responseMimeType: "application/json"`. Model id comes from `summary.model`, default `gemini-3.8-flash`. No fallback models or retries.
+- Workflow passes `secrets.GEMINI_API_KEY`; the key is never placed in public config, logs or the URL. No Models permission.
 - Only for items that (a) have no cached summary, (b) are tier 爆火/热门/升温 or watch hits, (c) at most `summary_max_per_run` (default 8) per run, highest score first.
 - Prompt input: title, plain description, price-like strings, categories, merchant domain, net votes, comments. Output JSON: `{"one_liner": "<=40 Chinese characters: what it is and why people like it", "caveat": "<=30 chars, conditions/limits like membership, C&C, minimum spend, or empty"}`. Temperature 0.2. Validate JSON and lengths; on failure store nothing and retry next run.
-- If `GITHUB_TOKEN` is absent (local runs, tests) or the API errors/rate-limits, skip silently with a log line. Tests mock the HTTP call.
+- If provider is none or the key is absent, skip with exactly one log line and zero network calls. Fixture mode always disables AI. After the first failed AI call for any reason (HTTP, timeout, non-JSON, invalid response shape/length), stop all remaining item and digest calls in that monitor run. Preserve successful caches and try again only on the next run. Tests mock HTTP; no live Gemini call is required.
 - Also produce a run-level **"本期速览"** (digest): one call per run at most, max 120 Chinese characters, summarising the Top 3 and any bursts. Cached and only regenerated when the Top 3 set changes.
 - The UI marks AI text with a small "AI 摘要" label.
 
@@ -140,7 +143,7 @@ Reference look: Muse screenshot (warm off-white cards, orange accent, rank badge
 ## 9. Workflow (.github/workflows/monitor.yml)
 
 - Triggers: `schedule: cron "7,37 * * * *"` (avoid :00 congestion), `workflow_dispatch`, and `push` to main touching code/site.
-- permissions: `contents: write`, `pages: write`, `id-token: write`, `models: read`.
+- permissions: `contents: write`, `pages: write`, `id-token: write`.
 - concurrency group `monitor`, cancel-in-progress false.
 - **Auto-stop guard**: first step computes Sydney date; if `>= STOP_DATE` (repo variable `STOP_DATE`, default `2027-01-01` in the workflow file), scheduled runs exit early with a notice (manual dispatch still runs). Remove/extend by editing one line.
 - Steps: checkout main; checkout the `state` branch into `./state` (create orphan branch on first run if missing); run tests (`python -m unittest`); run both monitors; copy `site/` + generated `data/` into `_site`; commit `state/` to the `state` branch as a single amended commit and force-push (avoids history bloat); upload pages artifact; deploy pages.
@@ -148,7 +151,7 @@ Reference look: Muse screenshot (warm off-white cards, orange accent, rank badge
 
 ## 10. Tests (unittest, offline)
 
-At least: RSS parsing on both OzBargain fixtures (count, id, metrics, flags, merchant url, free detection), merge/dedupe, score bounds and monotonicity, tier rules, burst with synthetic snapshots (no history -> null; real jump -> true; slow steady growth -> false), prune, keyword watch/block, summary module with mocked HTTP (success, bad JSON, HTTP 429, no token), output JSON schema keys, HN adapter on its fixture, end-to-end run of `scripts/run.py` against fixtures via a `--fixtures` flag (no network). Frontend: a Python test that `site/*.html` reference existing files and contain no external `http` script/style URLs.
+At least: RSS parsing on both OzBargain fixtures (count, id, metrics, flags, merchant url, free detection), merge/dedupe, score bounds and monotonicity, tier rules, burst with synthetic snapshots (no history -> null; real jump -> true; slow steady growth -> false), prune, keyword watch/block, summary module with mocked HTTP (success, bad JSON, HTTP errors, timeout, invalid shapes, circuit breaker, disabled provider / missing key), output JSON schema keys, HN adapter on its fixture, end-to-end run of `scripts/run.py` against fixtures via a `--fixtures` flag (no network). Frontend: a Python test that `site/*.html` reference existing files and contain no external `http` script/style URLs.
 
 ## 11. Docs
 

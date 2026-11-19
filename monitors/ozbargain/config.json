@@ -30,10 +30,8 @@
   "retention_days": 7,
   "display_hours": 36,
   "summary": {
-    "model": "openai/gpt-4.1-mini",
-    "fallback_models": [
-      "openai/gpt-4.1"
-    ],
+    "provider": "none",
+    "model": "gemini-3.8-flash",
     "summary_max_per_run": 8
   }
 }

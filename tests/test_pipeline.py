@@ -219,56 +219,126 @@ class SummaryTests(unittest.TestCase):
         state = {'items': {row['id']: {'summary': None}}}
         return [row], state
 
-    def test_success_and_digest_cache(self):
-        rows, state = self.rows()
-        with patch('monitor_core.summarize.complete', side_effect=[{'one_liner': '玩具好价', 'caveat': '需会员'}, {'text': '本期玩具值得关注'}]) as call:
-            summarize.enrich(rows, state, CONFIG, 'token')
-            self.assertEqual(call.call_count, 2)
-            self.assertEqual(state['items'][rows[0]['id']]['summary']['one_liner'], '玩具好价')
-            summarize.enrich(rows, state, CONFIG, 'token')
-            self.assertEqual(call.call_count, 2)
+    def setUp(self):
+        self.config = copy.deepcopy(CONFIG)
+        self.config['summary']['provider'] = 'gemini'
 
-    def test_failures_and_absent_token(self):
-        for failure in (ValueError('bad JSON'), HTTPError('url', 429, 'limit', {}, None)):
-            rows, state = self.rows()
-            with patch('monitor_core.summarize.complete', side_effect=failure):
-                summarize.enrich(rows, state, CONFIG, 'token')
-            self.assertIsNone(state['items'][rows[0]['id']]['summary'])
-            if hasattr(failure, 'close'):
-                failure.close()
-        rows, state = self.rows()
-        with patch('monitor_core.summarize.complete') as call:
-            summarize.enrich(rows, state, CONFIG, '')
-            call.assert_not_called()
-        self.assertFalse(summarize.valid_summary({'one_liner': '长' * 41, 'caveat': ''}))
+    @staticmethod
+    def response(value):
+        return json.dumps({'candidates': [{'finishReason': 'STOP', 'content': {
+            'parts': [{'text': json.dumps(value, ensure_ascii=False)}]}}]}).encode()
 
-    def test_limits_fallback_and_invalid_json(self):
+    def two_rows(self):
         rows, state = self.rows()
-        config = copy.deepcopy(CONFIG)
-        config['summary']['summary_max_per_run'] = 1
         second = copy.deepcopy(rows[0])
         second['id'] = 'another'
         state['items']['another'] = {'summary': None}
-        rows.append(second)
-        with patch('monitor_core.summarize.complete', side_effect=[ValueError('model unavailable'), {'one_liner': '好价', 'caveat': ''}, {'text': '今日速览'}]) as call:
-            summarize.enrich(rows, state, config, 'token')
-            self.assertEqual(call.call_count, 3)
-            self.assertEqual(sum(bool(row['summary']) for row in rows), 1)
-            self.assertEqual(call.call_args_list[1].args[1], config['summary']['fallback_models'][0])
-        rows, state = self.rows()
-        with patch('monitor_core.summarize.complete', return_value={'one_liner': '长' * 41, 'caveat': ''}):
-            summarize.enrich(rows, state, CONFIG, 'token')
-        self.assertIsNone(state['items'][rows[0]['id']]['summary'])
-        self.assertNotIn('digest', state)
+        return rows + [second], state
 
-    def test_http_transport(self):
-        response = {'choices': [{'message': {'content': '{"one_liner":"好价","caveat":""}'}}]}
-        with patch('monitor_core.summarize.urlopen') as opening:
-            opening.return_value.__enter__.return_value.read.return_value = json.dumps(response).encode()
-            result = summarize.complete('secret', 'model', 'prompt')
-            self.assertEqual(result['one_liner'], '好价')
-            request = opening.call_args.args[0]
-            self.assertEqual(json.loads(request.data)['temperature'], 0.2)
+    def test_success_and_digest_cache(self):
+        rows, state = self.rows()
+        with patch('monitor_core.summarize.complete', side_effect=[{'one_liner': '玩具好价', 'caveat': '需会员'}, {'text': '本期玩具值得关注'}]) as call:
+            summarize.enrich(rows, state, self.config, 'key')
+            self.assertEqual(call.call_count, 2)
+            self.assertEqual(state['items'][rows[0]['id']]['summary']['one_liner'], '玩具好价')
+            summarize.enrich(rows, state, self.config, 'key')
+            self.assertEqual(call.call_count, 2)
+
+    def test_disabled_and_missing_key_log_once_without_http(self):
+        for settings, key in [({}, 'key'), ({'provider': 'none'}, 'key'),
+                              ({'provider': 'unknown'}, 'key'), ({'provider': 'gemini'}, '')]:
+            with self.subTest(settings=settings, key=key):
+                rows, state = self.rows()
+                with patch.dict('os.environ', {'GEMINI_API_KEY': key}), patch('monitor_core.summarize.urlopen') as opening, self.assertLogs('monitor_core.summarize', level='INFO') as logs:
+                    summarize.enrich(rows, state, {'summary': settings})
+                    opening.assert_not_called()
+                self.assertEqual(len(logs.output), 1)
+                self.assertIn('AI skipped:', logs.output[0])
+        for monitor in ('ozbargain', 'hackernews'):
+            config = json.loads((ROOT / 'monitors' / monitor / 'config.json').read_text())
+            self.assertEqual(config['summary']['provider'], 'none')
+
+    def test_first_http_failure_stops_all_items_and_digest(self):
+        failures = [TimeoutError('timeout'), OSError('offline')]
+        failures += [HTTPError('url', code, 'failure', {}, None) for code in (400, 401, 403, 429, 500)]
+        for failure in failures:
+            with self.subTest(failure=failure):
+                rows, state = self.two_rows()
+                with patch('monitor_core.summarize.urlopen', side_effect=failure) as opening:
+                    summarize.enrich(rows, state, self.config, 'key')
+                    self.assertEqual(opening.call_count, 1)
+                self.assertTrue(all(row['summary'] is None for row in rows))
+                self.assertNotIn('digest', state)
+            if hasattr(failure, 'close'):
+                failure.close()
+
+    def test_bad_json_or_shape_stops_without_retry(self):
+        invalid = [b'retired service', b'{}', b'{"candidates":[]}',
+                   self.response('not an object'), self.response({'one_liner': '好价'}),
+                   self.response({'one_liner': '长' * 41, 'caveat': ''}),
+                   self.response({'one_liner': '好价', 'caveat': 42}),
+                   b'{"candidates":[{"finishReason":"MAX_TOKENS","content":{"parts":[]}}]}',
+                   b'{"candidates":[{"content":{"parts":[{"text":"invalid JSON"}]}}]}']
+        for response in invalid:
+            with self.subTest(response=response):
+                rows, state = self.two_rows()
+                with patch('monitor_core.summarize.urlopen') as opening:
+                    opening.return_value.__enter__.return_value.read.return_value = response
+                    summarize.enrich(rows, state, self.config, 'key')
+                    self.assertEqual(opening.call_count, 1)
+                self.assertTrue(all(row['summary'] is None for row in rows))
+                self.assertNotIn('digest', state)
+
+    def test_limits_and_default_model(self):
+        rows, state = self.two_rows()
+        self.config['summary'] = {'provider': 'gemini', 'summary_max_per_run': 1}
+        with patch('monitor_core.summarize.complete', side_effect=[{'one_liner': '好价', 'caveat': ''}, {'text': '今日速览'}]) as call:
+            summarize.enrich(rows, state, self.config, 'key')
+            self.assertEqual(call.call_count, 2)
+            self.assertEqual(sum(bool(row['summary']) for row in rows), 1)
+            self.assertTrue(all(c.args[1] == 'gemini-3.8-flash' for c in call.call_args_list))
+
+    def test_later_failure_preserves_successes_and_next_run_recovers(self):
+        rows, state = self.two_rows()
+        with patch('monitor_core.summarize.complete', side_effect=[{'one_liner': '好价', 'caveat': ''}, ValueError('bad JSON')]) as call:
+            summarize.enrich(rows, state, self.config, 'key')
+            self.assertEqual(call.call_count, 2)
+            self.assertEqual(rows[0]['summary']['one_liner'], '好价')
+            self.assertNotIn('digest', state)
+        with patch('monitor_core.summarize.complete', side_effect=[{'one_liner': '另一个好价', 'caveat': ''}, {'text': '今日速览'}]) as call:
+            summarize.enrich(rows, state, self.config, 'key')
+            self.assertEqual(call.call_count, 2)
+            self.assertIn('digest', state)
+
+    def test_invalid_digest_preserves_cached_state(self):
+        for invalid in ({'text': ''}, {'text': '长' * 121}, [], {'text': 3}):
+            rows, state = self.rows()
+            state['digest'] = {'top_ids': ['old'], 'text': '旧速览', 'ai': True}
+            with patch('monitor_core.summarize.complete', side_effect=[{'one_liner': '好价', 'caveat': ''}, invalid]) as call:
+                summarize.enrich(rows, state, self.config, 'key')
+                self.assertEqual(call.call_count, 2)
+            self.assertEqual(state['digest']['top_ids'], ['old'])
+
+    def test_http_transport_and_environment_key(self):
+        rows, state = self.rows()
+        self.config['summary']['model'] = 'gemini-configured-model'
+        with patch.dict('os.environ', {'GEMINI_API_KEY': 'secret'}), patch('monitor_core.summarize.urlopen') as opening:
+            opening.return_value.__enter__.return_value.read.side_effect = [
+                self.response({'one_liner': '好价', 'caveat': ''}), self.response({'text': '今日速览'})]
+            summarize.enrich(rows, state, self.config)
+            self.assertEqual(opening.call_count, 2)
+            request = opening.call_args_list[0].args[0]
+            self.assertEqual(request.full_url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-configured-model:generateContent')
+            self.assertEqual(request.get_header('X-goog-api-key'), 'secret')
+            self.assertNotIn('secret', request.full_url)
+            self.assertIsNone(request.get_header('Authorization'))
+            self.assertEqual(opening.call_args.kwargs['timeout'], 20)
+            payload = json.loads(request.data)
+            self.assertEqual(payload['generationConfig'], {'temperature': 0.2, 'responseMimeType': 'application/json'})
+            self.assertEqual(payload['contents'][0]['role'], 'user')
+            self.assertIn('title', json.loads(payload['contents'][0]['parts'][0]['text']))
+            self.assertIn('untrusted data', payload['systemInstruction']['parts'][0]['text'])
+            self.assertEqual(rows[0]['summary']['one_liner'], '好价')
 
 
 class PipelineTests(unittest.TestCase):
@@ -317,7 +387,7 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(len(store.load(root / 'state/state.json')['items']), 48)
 
     def test_end_to_end_schema_and_recovery(self):
-        with tempfile.TemporaryDirectory() as temp, patch.dict('os.environ', {'GITHUB_TOKEN': ''}):
+        with tempfile.TemporaryDirectory() as temp, patch.dict('os.environ', {'GEMINI_API_KEY': ''}):
             state_dir, out = Path(temp) / 'state', Path(temp) / 'out'
             document = run('ozbargain', state_dir, out, FIXTURES, NOW)
             self.assertTrue({'monitor', 'title', 'generated_at', 'stats', 'digest', 'config_public', 'items'} <= document.keys())
@@ -349,10 +419,17 @@ class PipelineTests(unittest.TestCase):
             document = run('ozbargain', temp + '/state', temp + '/out', FIXTURES, NOW)
             self.assertEqual(document['stats']['total'], 48)
 
-    def test_fixture_api_offline_even_with_token(self):
-        with tempfile.TemporaryDirectory() as temp, patch.dict('os.environ', {'GITHUB_TOKEN': 'must-not-be-used'}), patch('monitor_core.summarize.complete') as call:
-            run('ozbargain', temp + '/state', temp + '/out', FIXTURES, NOW)
-            call.assert_not_called()
+    def test_fixture_api_offline_even_with_gemini_enabled(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict('os.environ', {'GEMINI_API_KEY': 'must-not-be-used'}), patch('monitor_core.summarize.urlopen') as opening:
+            root = Path(temp)
+            config = copy.deepcopy(CONFIG)
+            config['summary']['provider'] = 'gemini'
+            config_path = root / 'monitors/ozbargain/config.json'
+            config_path.parent.mkdir(parents=True)
+            config_path.write_text(json.dumps(config))
+            with patch('monitor_core.build.ROOT', root):
+                run('ozbargain', root / 'state', root / 'out', FIXTURES, NOW)
+            opening.assert_not_called()
 
     def test_cli_fixtures(self):
         with tempfile.TemporaryDirectory() as temp:
