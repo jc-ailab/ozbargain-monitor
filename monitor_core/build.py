@@ -9,6 +9,26 @@ from .model import iso, timestamp, utcnow
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def item_row(entry, config, now):
+    item = entry['item']
+    row = {'expiry': '', 'starting': '', **item, **item['extra'],
+           'first_seen': entry['first_seen'], 'last_seen': entry['last_seen'],
+           'summary': entry.get('summary'),
+           'trend': [[p[0], p[1] - p[2], p[3]] for p in store.sample(entry['snapshots'], 24)]}
+    row.pop('extra', None)
+    expiry = row['expiry']
+    if expiry:
+        try:
+            if timestamp(expiry) <= now and 'expired' not in row['flags']:
+                row['flags'] = row['flags'] + ['expired']
+        except ValueError:
+            logging.getLogger(__name__).warning('Ignoring invalid expiry for %s', row['id'])
+    # Historical bursts are not current bursts when an item disappears from feeds.
+    history = entry['snapshots'] if entry['last_seen'] == iso(now) else []
+    row.update(scoring.score(item, history, config, now))
+    return row
+
+
 def run(monitor, state_dir, out, fixtures=None, now=None):
     now = now or utcnow()
     config = json.loads((ROOT / 'monitors' / monitor / 'config.json').read_text())
@@ -21,31 +41,17 @@ def run(monitor, state_dir, out, fixtures=None, now=None):
     if seen:
         state['last_success'] = iso(now)
     output = []
-    for entry in state['items'].values():
-        item = entry['item']
-        row = {**item, **item['extra'], 'first_seen': entry['first_seen'],
-               'last_seen': entry['last_seen'], 'summary': entry.get('summary'),
-               'trend': [[p[0], p[1] - p[2], p[3]] for p in store.sample(entry['snapshots'], 24)]}
-        row.pop('extra', None)
-        expiry = row.get('expiry')
-        if expiry:
-            try:
-                if timestamp(expiry) <= now and 'expired' not in row['flags']:
-                    row['flags'] = row['flags'] + ['expired']
-            except ValueError:
-                logging.getLogger(__name__).warning('Ignoring invalid expiry for %s', row['id'])
-        row.update(scoring.score(item, entry['snapshots'], config, now))
-        # Historical bursts are not current bursts when an item disappears from feeds.
-        if entry['last_seen'] != iso(now):
-            row['burst'] = None
-            row['breakdown']['burst']['raw'] = 0
-            row['breakdown']['burst']['points'] = 0
-            fresh_score = scoring.score(item, [], config, now)
-            row.update(fresh_score)
-        output.append(row)
+    for item_id, entry in state['items'].items():
+        try:
+            output.append(item_row(entry, config, now))
+        except Exception as exc:
+            logging.getLogger(__name__).warning('Skipping invalid stored item %s: %s', item_id, exc)
     output.sort(key=lambda x: ('expired' in x['flags'], -x['score'], x['id']))
     if seen:
-        summarize.enrich(output, state, config)
+        try:
+            summarize.enrich(output, state, config, token='' if fixtures else None)
+        except Exception as exc:
+            logging.getLogger(__name__).warning('AI enrichment unavailable: %s', type(exc).__name__)
     stats = {'total': len(output), **{tier: sum(i['tier'] == tier for i in output) for tier in ('viral', 'hot', 'rising')},
              'free': sum(bool(i['is_free']) for i in output),
              'bursting': sum(bool(i['burst'] and i['burst']['is_burst']) for i in output),

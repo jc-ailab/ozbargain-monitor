@@ -68,7 +68,7 @@ class FeedClient:
                 return data
             except Exception as exc:
                 error = exc
-                LOG.warning('Feed request failed: %s (%s)', url, type(exc).__name__)
+                LOG.warning('Feed request failed: %s (%s: %s)', url, type(exc).__name__, exc)
         raise RuntimeError(type(error).__name__ if error else 'request budget exhausted')
 
 

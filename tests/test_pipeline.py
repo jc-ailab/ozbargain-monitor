@@ -117,6 +117,13 @@ class ScoreTests(unittest.TestCase):
         item['metrics'].update(comments=10**9, clicks=10**9)
         self.assertLessEqual(scoring.score(item, [], CONFIG, NOW)['score'], 100)
 
+    def test_all_score_threshold_tiers(self):
+        for votes, comments, clicks, expected in [(35, 150, 5000, 'viral'), (10, 30, 5000, 'hot'), (1, 150, 5000, 'rising')]:
+            item = self.item(votes)
+            item['metrics'].update(comments=comments, clicks=clicks)
+            self.assertEqual(scoring.score(item, [], CONFIG, NOW)['tier'], expected)
+        self.assertIsNone(scoring.score(self.item(), [], CONFIG, NOW)['tier'])
+
     def test_tiers_and_keywords(self):
         self.assertEqual(scoring.score(self.item(200), [], CONFIG, NOW)['tier'], 'viral')
         self.assertEqual(scoring.score(self.item(60), [], CONFIG, NOW)['tier'], 'hot')
@@ -189,6 +196,25 @@ class SummaryTests(unittest.TestCase):
             call.assert_not_called()
         self.assertFalse(summarize.valid_summary({'one_liner': '长' * 41, 'caveat': ''}))
 
+    def test_limits_fallback_and_invalid_json(self):
+        rows, state = self.rows()
+        config = copy.deepcopy(CONFIG)
+        config['summary']['summary_max_per_run'] = 1
+        second = copy.deepcopy(rows[0])
+        second['id'] = 'another'
+        state['items']['another'] = {'summary': None}
+        rows.append(second)
+        with patch('monitor_core.summarize.complete', side_effect=[ValueError('model unavailable'), {'one_liner': '好价', 'caveat': ''}, {'text': '今日速览'}]) as call:
+            summarize.enrich(rows, state, config, 'token')
+            self.assertEqual(call.call_count, 3)
+            self.assertEqual(sum(bool(row['summary']) for row in rows), 1)
+            self.assertEqual(call.call_args_list[1].args[1], config['summary']['fallback_models'][0])
+        rows, state = self.rows()
+        with patch('monitor_core.summarize.complete', return_value={'one_liner': '长' * 41, 'caveat': ''}):
+            summarize.enrich(rows, state, CONFIG, 'token')
+        self.assertIsNone(state['items'][rows[0]['id']]['summary'])
+        self.assertNotIn('digest', state)
+
     def test_http_transport(self):
         response = {'choices': [{'message': {'content': '{"one_liner":"好价","caveat":""}'}}]}
         with patch('monitor_core.summarize.urlopen') as opening:
@@ -217,6 +243,26 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue(all(v.startswith('error:') for v in fallback['stats']['feeds'].values()))
             recovered = recover('ozbargain', state_dir, out, ValueError())
             self.assertIn('pipeline', recovered['stats']['feeds'])
+
+    def test_ai_exception_and_invalid_stored_item_are_isolated(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with patch('monitor_core.summarize.enrich', side_effect=RuntimeError('AI unavailable')):
+                document = run('ozbargain', temp + '/state', temp + '/out', FIXTURES, NOW)
+            self.assertEqual(document['stats']['total'], 48)
+            state_path = Path(temp) / 'state/state.json'
+            state = store.load(state_path)
+            invalid = copy.deepcopy(next(iter(state['items'].values())))
+            invalid['item']['posted_at'] = 'broken'
+            invalid['item']['id'] = 'invalid'
+            state['items']['invalid'] = invalid
+            store.save(state_path, state)
+            document = run('ozbargain', temp + '/state', temp + '/out', FIXTURES, NOW)
+            self.assertEqual(document['stats']['total'], 48)
+
+    def test_fixture_api_offline_even_with_token(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict('os.environ', {'GITHUB_TOKEN': 'must-not-be-used'}), patch('monitor_core.summarize.complete') as call:
+            run('ozbargain', temp + '/state', temp + '/out', FIXTURES, NOW)
+            call.assert_not_called()
 
     def test_cli_fixtures(self):
         with tempfile.TemporaryDirectory() as temp:
