@@ -252,6 +252,50 @@ class SummaryTests(unittest.TestCase):
 
 
 class PipelineTests(unittest.TestCase):
+    def test_display_window_and_feed_membership(self):
+        items = Source(FIXTURES).fetch()[:4]
+        with tempfile.TemporaryDirectory() as temp, patch('monitor_core.build.ROOT', Path(temp)):
+            config_path = Path(temp) / 'monitors/ozbargain/config.json'
+            config_path.parent.mkdir(parents=True)
+            config = {key: value for key, value in CONFIG.items() if key != 'display_hours'}
+            config_path.write_text(json.dumps(config))
+            state_dir, out = Path(temp) / 'state', Path(temp) / 'out'
+            with patch.object(Source, 'fetch', return_value=items):
+                run('ozbargain', state_dir, out, FIXTURES, NOW)
+            with patch.object(Source, 'fetch', return_value=items[:1]):
+                boundary = run('ozbargain', state_dir, out, FIXTURES, NOW + timedelta(hours=36))
+                self.assertEqual(boundary['stats']['total'], 4)
+                self.assertEqual(sum(i['in_current_feed'] for i in boundary['items']), 1)
+                self.assertTrue(all(i['burst'] is None for i in boundary['items'] if not i['in_current_feed']))
+                later = run('ozbargain', state_dir, out, FIXTURES, NOW + timedelta(hours=36, microseconds=1))
+            self.assertEqual([i['id'] for i in later['items']], [items[0].id])
+            self.assertEqual(later['stats']['total'], 1)
+            self.assertEqual(later['stats']['total_votes'], items[0].metrics['votes_pos'] - items[0].metrics['votes_neg'])
+            self.assertEqual(later['stats']['total_comments'], items[0].metrics['comments'])
+            for tier in ('viral', 'hot', 'rising'):
+                self.assertEqual(later['stats'][tier], int(later['items'][0]['tier'] == tier))
+            saved = store.load(state_dir / 'state.json')
+            self.assertEqual(len(saved['items']), 4)
+            self.assertEqual(len(saved['items'][items[1].id]['snapshots']), 1)
+            self.assertEqual(saved['items'][items[1].id]['last_seen'], iso(NOW))
+            self.assertEqual(json.loads((out / 'data/ozbargain.json').read_text())['items'], later['items'])
+
+    def test_display_window_config_override(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config_path = root / 'monitors/ozbargain/config.json'
+            config_path.parent.mkdir(parents=True)
+            config_path.write_text(json.dumps({**CONFIG, 'display_hours': 1}))
+            with patch('monitor_core.build.ROOT', root):
+                run('ozbargain', root / 'state', root / 'out', FIXTURES, NOW)
+                with patch.object(Source, 'fetch', return_value=[]):
+                    document = run('ozbargain', root / 'state', root / 'out', FIXTURES, NOW + timedelta(hours=2))
+            self.assertEqual(document['items'], [])
+            self.assertEqual(document['stats']['total'], 0)
+            self.assertEqual(document['stats']['total_votes'], 0)
+            self.assertIsNone(document['digest'])
+            self.assertEqual(len(store.load(root / 'state/state.json')['items']), 48)
+
     def test_end_to_end_schema_and_recovery(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict('os.environ', {'GITHUB_TOKEN': ''}):
             state_dir, out = Path(temp) / 'state', Path(temp) / 'out'

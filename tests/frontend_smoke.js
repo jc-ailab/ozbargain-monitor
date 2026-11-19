@@ -21,6 +21,10 @@ async function check(monitor, storageUnavailable) {
   assert.equal(nodes.title.textContent, source.title);
   assert.equal(vm.runInContext('compactNumber(1620)', context), '1.6K');
   assert.equal(vm.runInContext('compactNumber(39.6)', context), '39.6');
+  for (const rank of [0, 1]) {
+    assert.match(vm.runInContext(`card({...data.items[0], watch_hit: [], in_current_feed: false}, ${rank})`, context), /已离开 feed · 数据截至/);
+    assert.doesNotMatch(vm.runInContext(`card({...data.items[0], watch_hit: [], in_current_feed: true}, ${rank})`, context), /已离开 feed/);
+  }
   assert.match(nodes['deal-list'].innerHTML, /<article/);
   assert.match(nodes['top-list'].innerHTML, /热度精选/);
   assert.equal(nodes['deal-list'].innerHTML.includes('去商家'), monitor === 'ozbargain');

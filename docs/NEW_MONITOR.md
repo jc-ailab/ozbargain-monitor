@@ -25,7 +25,7 @@ A JSON source can return the same `Item` objects without using RSS helpers. Keep
 
 ## 3. Configure scoring (5 minutes)
 
-Copy [HN config](../monitors/hackernews/config.json). Set `monitor` and Chinese `title`, weights, caps, tier thresholds, burst window/minimum/ratio, watch/block keywords, retention and summary model/fallbacks. Weights should sum to 100, all caps must be positive. Core metrics have stable names; sources without clicks can set that weight to 0 and redistribute it. The bundled HN example retains the reference scoring weights to show the same scoring pipeline; missing clicks contribute zero.
+Copy [HN config](../monitors/hackernews/config.json). Set `monitor` and Chinese `title`, weights, caps, tier thresholds, burst window/minimum/ratio, watch/block keywords, display_hours (default 36, independent of state retention), retention and summary model/fallbacks. Weights should sum to 100, all caps must be positive. Core metrics have stable names; sources without clicks can set that weight to 0 and redistribute it. The bundled HN example retains the reference scoring weights to show the same scoring pipeline; missing clicks contribute zero.
 
 Each record is stored in `STATE_DIR/state.json`; use **separate state directories for each monitor**. Disappearing items retain their last data until retention elapses, without inventing samples. The complete observed history defines average burst rate. Snapshots retain the newest 64 densely and sample the older history into 32 slots (max 96); published trend is sampled across time to ≤24 points.
 

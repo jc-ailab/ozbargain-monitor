@@ -46,13 +46,13 @@ python3 scripts/run.py --monitor hackernews --state-dir .state/live/hackernews -
 
 页面「设置」可覆盖关注词、屏蔽词、首页限定与过期显示，只保存在本浏览器。收藏 / 隐藏独立按 monitor 保存。存储被禁用时页面仍可使用。筛选和搜索影响列表，Top 3 按基础可见条件中的热度选出。统计栏展示服务端整体采样概况，不随个人筛选变化。
 
-修改 `monitors/<name>/config.json` 可改权重、阈值、默认关键词、保留天数及 AI 模型；[新增监控指南](docs/NEW_MONITOR.md) 使用 HN 展示完整复用过程。HN 的 points 映射为赞成票，点击为 0，不显示商家按钮。
+修改 `monitors/<name>/config.json` 可改权重、阈值、默认关键词、展示时限（`display_hours`，默认 36 小时）、保留天数及 AI 模型；[新增监控指南](docs/NEW_MONITOR.md) 使用 HN 展示完整复用过程。HN 的 points 映射为赞成票，点击为 0，不显示商家按钮。
 
 GitHub Actions 在每小时第 7、37 分钟运行；修改代码 / 页面并推到 main 或手动 dispatch 也会运行。`state` 分支使用单个 amended commit 保存历史及上次发布结果；不要用该分支保存手工内容。仓库变量 `STOP_DATE` 默认 `2027-01-01`，到该悉尼日期后定时运行跳过；手动运行仍可用。第一次运行会创建 state 分支。Pages 必须允许 Actions 部署，仓库策略也必须允许 `models: read` 和 state 分支写入。
 
 没有 `GITHUB_TOKEN` 就跳过 AI。Actions 仅用内置 token 请求 GitHub Models，每轮最多摘要 8 条候选帖子，缓存成功结果；Top 3 集合变化时最多请求一次 120 字速览。限流 / 模型不可用会保留原始数据，下一轮再试。内容仅为 RSS 提供的有限信息。
 
-单个 feed 失败保留之前数据，状态写在 JSON 的 `stats.feeds`。全部失败时保留上次成功时间，页面超过 90 分钟会警告。历史保留 7 天，每条最多 96 个快照，输出趋势最多 24 点；JSON 控制在 1.5 MB 内。页面每 10 分钟重新读取 JSON，无需整页刷新。
+单个 feed 失败保留之前数据，状态写在 JSON 的 `stats.feeds`。全部失败时保留上次成功时间，页面超过 90 分钟会警告。页面仅发布最近 36 小时见过的帖子，统计也只计算这些帖子；本轮未见的卡片标注「已离开 feed」及最后采样时间。历史仍保留 7 天，每条最多 96 个快照，输出趋势最多 24 点；JSON 控制在 1.5 MB 内。页面每 10 分钟重新读取 JSON，无需整页刷新。
 
 ## 免责声明
 

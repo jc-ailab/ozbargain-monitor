@@ -9,10 +9,11 @@ from .model import iso, timestamp, utcnow
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def item_row(entry, config, now):
+def item_row(entry, config, now, in_current_feed):
     item = entry['item']
     row = {'expiry': '', 'starting': '', **item, **item['extra'],
            'first_seen': entry['first_seen'], 'last_seen': entry['last_seen'],
+           'in_current_feed': in_current_feed,
            'summary': entry.get('summary'),
            'trend': [[p[0], p[1] - p[2], p[3]] for p in store.sample(entry['snapshots'], 24)]}
     row.pop('extra', None)
@@ -24,7 +25,7 @@ def item_row(entry, config, now):
         except ValueError:
             logging.getLogger(__name__).warning('Ignoring invalid expiry for %s', row['id'])
     # Historical bursts are not current bursts when an item disappears from feeds.
-    history = entry['snapshots'] if entry['last_seen'] == iso(now) else []
+    history = entry['snapshots'] if in_current_feed else []
     row.update(scoring.score(item, history, config, now))
     return row
 
@@ -37,13 +38,16 @@ def run(monitor, state_dir, out, fixtures=None, now=None):
     state_path = Path(state_dir) / 'state.json'
     state = store.load(state_path)
     seen = source.fetch()
+    seen_ids = {item.id for item in seen}
     store.update(state, seen, now, config.get('retention_days', 7))
     if seen:
         state['last_success'] = iso(now)
     output = []
+    display_hours = config.get('display_hours', 36)
     for item_id, entry in state['items'].items():
         try:
-            output.append(item_row(entry, config, now))
+            if (now - timestamp(entry['last_seen'])).total_seconds() <= display_hours * 3600:
+                output.append(item_row(entry, config, now, item_id in seen_ids))
         except Exception as exc:
             logging.getLogger(__name__).warning('Skipping invalid stored item %s: %s', item_id, exc)
     output.sort(key=lambda x: ('expired' in x['flags'], -x['score'], x['id']))

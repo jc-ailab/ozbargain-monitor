@@ -28,6 +28,7 @@
   "watch": [],
   "block": [],
   "retention_days": 7,
+  "display_hours": 36,
   "summary": {
     "model": "openai/gpt-4.1-mini",
     "fallback_models": [
