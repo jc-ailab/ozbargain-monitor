@@ -1,0 +1,38 @@
+{
+  "monitor": "hackernews",
+  "title": "Hacker News 热帖监控",
+  "weights": {
+    "votes": 30,
+    "comments": 25,
+    "velocity": 25,
+    "clicks": 10,
+    "burst": 10
+  },
+  "caps": {
+    "votes": 300,
+    "comments": 150,
+    "velocity": 60,
+    "clicks": 5000,
+    "burst": 40
+  },
+  "thresholds": {
+    "viral_score": 70,
+    "hot_score": 50,
+    "rising_score": 35,
+    "viral_votes": 200,
+    "hot_votes": 60,
+    "burst_window_minutes": 30,
+    "burst_min": 5,
+    "burst_ratio": 2
+  },
+  "watch": [],
+  "block": [],
+  "retention_days": 7,
+  "summary": {
+    "model": "openai/gpt-4.1-mini",
+    "fallback_models": [
+      "openai/gpt-4.1"
+    ],
+    "summary_max_per_run": 8
+  }
+}

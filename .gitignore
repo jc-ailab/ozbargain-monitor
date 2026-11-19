@@ -1,6 +1,6 @@
 __pycache__/
-*.pyc
-.DS_Store
-/out/
-/state/
-/_site/
+*.py[cod]
+.state/
+state/
+_site/
+site/data/
