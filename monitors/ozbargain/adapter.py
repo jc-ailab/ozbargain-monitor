@@ -4,6 +4,7 @@ import re
 from urllib.parse import urlsplit
 from monitor_core.model import Item
 from monitor_core.rss import number, plain_text, pubdate, read_feeds, web_url
+from .conditions import condition_chips
 
 NS = {'ozb': 'https://www.ozbargain.com.au', 'dc': 'http://purl.org/dc/elements/1.1/'}
 FEEDS = {
@@ -64,6 +65,8 @@ def parse(root, feed='deals'):
                        'expiry': attrs.get('expiry', ''), 'starting': attrs.get('starting', ''),
                        'on_front_page': feed == 'front',
                        'is_free': free_deal(title, free_category)}))
+            item = result[-1]
+            item.extra['conditions'] = condition_chips(title, item.extra['description'], item.flags)
         except Exception as exc:
             logging.getLogger(__name__).warning('Skipping malformed RSS item: %s', exc)
     return result
@@ -81,6 +84,7 @@ def merge(items):
         old.extra['on_front_page'] |= item.extra['on_front_page']
         old.flags = sorted(set(old.flags + item.flags))
         old.tags = list(dict.fromkeys(old.tags + item.tags))
+        old.extra['conditions'] = condition_chips(old.title, old.extra['description'], old.flags)
     return list(merged.values())
 
 

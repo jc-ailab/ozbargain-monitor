@@ -37,6 +37,15 @@ async function check(monitor, storageUnavailable) {
   document.listeners.load({type: 'load', target: img});
   assert.equal(img.parentElement.dataset.imageState, 'failed');
   for (const rank of [0, 1]) {
+    const plain = vm.runInContext(`card({...data.items[0], watch_hit: [], conditions: ['Prime 免运', '自提 C&C', '满 $59 免运', '会员/定向', '即将开始', '需激活', '返现'], flags: ['targeted', 'upcoming'], summary: null}, ${rank})`, context);
+    for (const text of ['Prime 免运', '自提 C&amp;C', '满 $59 免运', '会员/定向', '即将开始', '需激活', '返现']) {
+      assert.equal(plain.split(`>${text}</span>`).length - 1, 1, `unique condition ${text}`);
+    }
+    assert.doesNotMatch(plain, /AI 摘要/);
+    const withAI = vm.runInContext(`card({...data.items[0], watch_hit: [], conditions: ['需激活'], summary: {one_liner: '好价', caveat: '仅限指定用户'}}, ${rank})`, context);
+    assert.match(withAI, /chip condition">需激活/);
+    assert.match(withAI, /留意：仅限指定用户/);
+    assert.match(vm.runInContext(`card({...data.items[0], watch_hit: [], conditions: ['<script>']}, ${rank})`, context), /&lt;script&gt;/);
     assert.match(vm.runInContext(`card({...data.items[0], watch_hit: [], in_current_feed: false}, ${rank})`, context), /已离开 feed · 数据截至/);
     assert.doesNotMatch(vm.runInContext(`card({...data.items[0], watch_hit: [], in_current_feed: true}, ${rank})`, context), /已离开 feed/);
   }
@@ -76,6 +85,6 @@ async function check(monitor, storageUnavailable) {
   assert.equal(nodes['deal-list'].innerHTML, before);
   assert.match(nodes.notice.textContent, /更新暂时失败/);
   if (storageUnavailable) assert.match(nodes.notice.textContent, /存储不可用/);
-  console.log(`PASS ${monitor}: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback; storage=${!storageUnavailable}`);
+  console.log(`PASS ${monitor}: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback, condition chips + AI caveat; storage=${!storageUnavailable}`);
 }
 (async () => { for (const m of ['ozbargain', 'hackernews']) for (const noStore of [false, true]) await check(m, noStore); })().catch(error => { console.error(error); process.exitCode = 1; });

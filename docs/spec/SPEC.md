@@ -103,6 +103,7 @@ Review 4 supersedes the original GitHub Models design after the live run returne
 - If provider is none or the key is absent, skip with exactly one log line and zero network calls. Fixture mode always disables AI. After the first failed AI call for any reason (HTTP, timeout, non-JSON, invalid response shape/length), stop all remaining item and digest calls in that monitor run. Preserve successful caches and try again only on the next run. Tests mock HTTP; no live Gemini call is required.
 - Also produce a run-level **"本期速览"** (digest): one call per run at most, max 120 Chinese characters, summarising the Top 3 and any bursts. Cached and only regenerated when the Top 3 set changes.
 - The UI marks AI text with a small "AI 摘要" label.
+- Review 4 R10: deterministic OzBargain condition chips come from RSS title/description/flags with no AI: Prime shipping/requirement, C&C, explicitly supported minimum-spend free delivery, membership/targeting, upcoming, activation and cashback. Preserve any AI caveat alongside these chips.
 
 ## 7. Output JSON (site data)
 

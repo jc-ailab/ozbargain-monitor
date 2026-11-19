@@ -97,8 +97,9 @@ document.addEventListener('load', imageState, true);
 function card(item, rank = 0) {
   const h = escapeHTML, m = item.metrics, net = m.votes_pos - m.votes_neg;
   const chip = (text, css = '') => `<span class="chip ${css}">${h(text)}</span>`;
-  const flagLabels = {expired: '过期', upcoming: '即将开始', targeted: '仅限部分用户', 'out-of-stock': '缺货'};
-  const chips = (item.tier ? chip(tiers[item.tier], 'tier') : '') + (bursting(item) ? chip('正在爆发', 'burst') : '') + (item.is_free ? chip('免费', 'free') : '') + (item.on_front_page ? chip('首页') : '') + item.flags.map(f => chip(flagLabels[f] || f)).join('') + (item.blocked ? chip('已屏蔽') : '') + (hidden.has(item.id) ? chip('已隐藏') : '') + item.watch_hit.map(w => chip(`关注 · ${w}`, 'tier')).join('');
+  const conditions = Array.isArray(item.conditions) ? item.conditions : [];
+  const flagLabels = {expired: '过期', upcoming: '即将开始', targeted: '会员/定向', 'out-of-stock': '缺货'};
+  const chips = (item.tier ? chip(tiers[item.tier], 'tier') : '') + (bursting(item) ? chip('正在爆发', 'burst') : '') + (item.is_free ? chip('免费', 'free') : '') + (item.on_front_page ? chip('首页') : '') + item.flags.filter(f => !conditions.includes(flagLabels[f] || f)).map(f => chip(flagLabels[f] || f)).join('') + conditions.map(text => chip(text, 'condition')).join('') + (item.blocked ? chip('已屏蔽') : '') + (hidden.has(item.id) ? chip('已隐藏') : '') + item.watch_hit.map(w => chip(`关注 · ${w}`, 'tier')).join('');
   const title = `<h3><a href="${safeURL(item.url)}" target="_blank" rel="noopener noreferrer">${h(item.title)}</a></h3><div class="chips">${chips}</div>`;
   const score = `<div class="score"><strong>${h(item.score)}</strong><small>热度分 / 100</small></div>`;
   const ai = item.summary ? `<div class="summary"><span class="ai-label">AI 摘要</span>${h(item.summary.one_liner)}${item.summary.caveat ? `<p class="caveat">留意：${h(item.summary.caveat)}</p>` : ''}</div>` : '';
