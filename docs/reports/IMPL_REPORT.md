@@ -276,3 +276,79 @@ This section is included with the R7 implementation in the local commit titled `
 - Unresolved/human decisions: independent R7 review remains; iPhone/Safari, dark-mode visual acceptance, hosted Actions/Pages, Python 3.12 execution and real GitHub Models access remain outside this validation. No new implementation decision is needed.
 - Recommended next step: review this commit and the retained phone-width screenshots to assess R7 acceptance.
 - Long-term memory proposal: none; implementation evidence stays in this report. No external proposal file was written because this session forbids outside-repo writes.
+
+
+## Round 4
+
+Date: 2026-11-20 (Australia/Sydney). Scope: [REVIEW_4.md](../reviews/REVIEW_4.md), R8 → R9 → R10, implemented and committed in that order. **Implemented and locally verified; independent review and hosted acceptance remain pending.** Python remains standard library only. No live OzBargain/HN feed requests, Gemini API calls, push, deployment, credentials creation or persistent outside-repo writes. Temporary unittest scratch files were automatically removed; retained fixture builds, Chrome profiles and screenshots stay under ignored repo paths. No Shared Context, memory or outbox writes.
+
+### Changes and commits
+
+| Item | Local commit | Result |
+| --- | --- | --- |
+| R8 | `c0442e2` | Upgraded checkout/setup-python to v7 and upload-pages-artifact/deploy-pages to v5. Explicit matching `name: github-pages` / `artifact_name: github-pages`; retained `ref: main`, Python 3.12, `_site`, deployment output and environment. Added offline action/input contract coverage. |
+| R9 | `927c2a3` | `summary.provider` is `none` by default in both configs; optional `gemini` uses official REST generateContent, env `GEMINI_API_KEY`, configurable model (default `gemini-3.8-flash`) and JSON MIME mode. Disabled/missing-key paths log once with zero HTTP calls. The first failed call ends enrichment for that monitor run, including remaining items and digest; no retries or fallback models. Successful caches survive and the next run can recover. Removed GitHub Models transport and permission, passed the Actions secret and updated README, SPEC §6 and related stale guidance. |
+| R10 | `37b39e1` | Adapter-derived deterministic `conditions` from RSS titles, descriptions and merged flags. Cards show Prime requirement/free shipping, C&C, minimum-spend free shipping, membership/targeting, upcoming, activation and cashback chips without AI. Shipping thresholds require explicit delivery context; cashback/voucher spend alone is insufficient. Duplicate flag chips are suppressed and AI caveats remain alongside conditions. Added real-title, negative, merge, publication and frontend escaping/coexistence tests. |
+
+Each implementation commit includes `Co-Authored-By: Codex <noreply@openai.com>`. This report is committed separately with the same trailer.
+
+Official READMEs reviewed: [checkout v7](https://github.com/actions/checkout/blob/v7/README.md), [setup-python v7](https://github.com/actions/setup-python/blob/v7/README.md), [upload-pages-artifact v5](https://github.com/actions/upload-pages-artifact/blob/v5/README.md), [deploy-pages v5](https://github.com/actions/deploy-pages/blob/v5/README.md). Inputs used here remain supported; Pages names were made explicit. checkout/setup-python require a Node 24-capable runner (minimum runner v2.327.1); the workflow uses hosted `ubuntu-latest`. The official [Gemini generateContent reference](https://ai.google.dev/api/generate-content) was consulted for REST/JSON format; no model request was made. Tavily extraction failed with `ENOTFOUND api.tavily.com`; official docs were read through the available web tool instead.
+
+### Exact verification results
+
+All commands ran from the repo root. Expected malformed-item, offline-feed and simulated AI warnings in unittest are fixtures/mocks, not live requests.
+
+| Stage / command | Exact result |
+| --- | --- |
+| R8: `python3 -m unittest tests.test_workflow` | exit 0; `Ran 4 tests in 0.615s`; `OK`. |
+| R8: `python3 -m unittest discover -s tests` | exit 0; `Ran 33 tests in 0.863s`; `OK`. |
+| R9 targeted: `python3 -m unittest tests.test_pipeline.SummaryTests tests.test_pipeline.PipelineTests.test_fixture_api_offline_even_with_gemini_enabled tests.test_workflow` | exit 0; `Ran 14 tests in 0.795s`; `OK`. |
+| R9 final: `python3 -m unittest discover -s tests` | exit 0; `Ran 38 tests in 0.922s`; `OK`. |
+| R10 final targeted: `python3 -m unittest tests.test_conditions` | exit 0; `Ran 5 tests in 0.017s`; `OK`. |
+| Final full suite: `python3 -m unittest discover -s tests` | exit 0; `Ran 43 tests in 1.376s`; `OK`. |
+| `python3 scripts/run.py --monitor ozbargain --fixtures` | exit 0; 48 items; `feeds={'deals': 'ok', 'front': 'ok'}`; `INFO AI skipped: summary.provider=none`. |
+| `python3 scripts/run.py --monitor hackernews --fixtures` | exit 0; 20 items; `feeds={'front': 'ok'}`; `INFO AI skipped: summary.provider=none`. |
+| `node --check site/app.js` | exit 0; no output. |
+| `node tests/frontend_smoke.js site` | exit 0; four PASS scenarios below. |
+| `git diff --check` | exit 0; no whitespace errors. |
+
+Frontend smoke output:
+
+```text
+PASS ozbargain: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback, condition chips + AI caveat; storage=true
+PASS ozbargain: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback, condition chips + AI caveat; storage=false
+PASS hackernews: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback, condition chips + AI caveat; storage=true
+PASS hackernews: render, filters, settings, favourites, hide, error retention, compact stats, stale labels, image fallback, condition chips + AI caveat; storage=false
+```
+
+Mocked Gemini coverage includes environment-key/header handling, configurable/default models, JSON request format, success/cache/cap, HTTP 400/401/403/429/500, timeout/OSError, non-JSON outer/inner payloads, missing/empty candidates, incomplete output, invalid summary/digest shape/length, retained successful caches, next-run recovery, disabled/missing provider/key and fixture isolation with Gemini enabled.
+
+`python3 -u scripts/check_layout.py` inside the sandbox: exit 1, exact output:
+
+```text
+BLOCKED local fixture server: [Errno 1] Operation not permitted
+```
+
+The identical command outside the sandbox: **exit 0, 8/8 PASS**. Exact output:
+
+```text
+PASS index.html width=360 iframe.innerWidth=360: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-index-360.png
+PASS index.html width=375 iframe.innerWidth=375: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-index-375.png
+PASS index.html width=390 iframe.innerWidth=390: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-index-390.png
+PASS index.html width=1300 iframe.innerWidth=1300: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-index-1300.png
+PASS hn.html width=360 iframe.innerWidth=360: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-hn-360.png
+PASS hn.html width=375 iframe.innerWidth=375: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-hn-375.png
+PASS hn.html width=390 iframe.innerWidth=390: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-hn-390.png
+PASS hn.html width=1300 iframe.innerWidth=1300: overflow=false; scores/stats/actions fit (default + saved); images=loaded/failed/missing OK; screenshot=/Users/tracy/Documents/AI-Product-Studio/ozbargain-monitor/.state/layoutcheck/screenshots/ozb-layout-hn-1300.png
+```
+
+Visually inspected the 360px OzBargain screenshot: cashback/membership/activation chips, scores, stats and action labels are visible without horizontal overflow. All eight screenshots remain under `.state/layoutcheck/screenshots/`. Git initially could not create `.git/index.lock` inside the sandbox; requested local commits succeeded through the permitted escalation path.
+
+### Handoff
+
+- Objective/result: R8–R10 implemented, tested and committed in order; [PROJECT_CHARTER.md](../PROJECT_CHARTER.md) retains the product origin, vision and decision rights.
+- New facts: 43 offline tests, four frontend smoke scenarios and eight exact-width Chrome combinations pass.
+- Decisions: AI defaults off; Gemini is opt-in; first failure stops that monitor run; deterministic conditions remain available without AI.
+- Unresolved/human decisions: hosted Actions/Pages success, real Gemini availability/key/model access, Python 3.12 execution and independent acceptance remain unverified. No implementation decision is needed from Tracy.
+- Next steps: architect reviews these commits/screenshots, then an authorised hosted manual run checks the Pages fix; keep AI off unless separately configured for a later approved Gemini check.
+- Long-term memory proposal: none; project evidence stays in this report and Git. No external proposal file was written under the repo-only instruction.
