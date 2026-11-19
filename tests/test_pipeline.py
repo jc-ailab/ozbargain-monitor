@@ -144,7 +144,7 @@ class ScoreTests(unittest.TestCase):
         self.assertLessEqual(scoring.score(item, [], CONFIG, NOW)['score'], 100)
 
     def test_all_score_threshold_tiers(self):
-        for votes, comments, clicks, expected in [(35, 150, 5000, 'viral'), (10, 30, 5000, 'hot'), (1, 150, 5000, 'rising')]:
+        for votes, comments, clicks, expected in [(35, 150, 5000, 'viral'), (10, 60, 5000, 'hot'), (1, 150, 5000, 'rising')]:
             item = self.item(votes)
             item['metrics'].update(comments=comments, clicks=clicks)
             self.assertEqual(scoring.score(item, [], CONFIG, NOW)['tier'], expected)
@@ -152,7 +152,7 @@ class ScoreTests(unittest.TestCase):
 
     def test_tiers_and_keywords(self):
         self.assertEqual(scoring.score(self.item(200), [], CONFIG, NOW)['tier'], 'viral')
-        self.assertEqual(scoring.score(self.item(60), [], CONFIG, NOW)['tier'], 'hot')
+        self.assertEqual(scoring.score(self.item(80), [], CONFIG, NOW)['tier'], 'hot')
         item = self.item(1)
         item['title'] = 'Apple MacBook'
         item['tags'] = ['Student']
@@ -162,6 +162,26 @@ class ScoreTests(unittest.TestCase):
         self.assertEqual(result['watch_hit'], ['apple', 'STUDENT'])
         self.assertTrue(result['blocked'])
         self.assertIsNone(scoring.score(self.item(), [], CONFIG, NOW)['burst'])
+
+    def test_revised_tier_boundaries(self):
+        config = copy.deepcopy(CONFIG)
+        config['weights'] = {key: 0 for key in config['weights']}
+        # Isolate vote thresholds from score thresholds.
+        for votes, expected in ((60, None), (79, None), (80, 'hot'), (199, 'hot'), (200, 'viral')):
+            with self.subTest(votes=votes):
+                self.assertEqual(scoring.score(self.item(votes), [], config, NOW)['tier'], expected)
+        item = self.item(80)
+        item['metrics']['votes_neg'] = 1
+        self.assertIsNone(scoring.score(item, [], config, NOW)['tier'])
+        config['weights']['comments'] = 100
+        config['caps']['comments'] = 9999
+        for comments, score, tier in ((35, 39, None), (39, 40, 'rising'), (144, 54, 'rising'),
+                                      (157, 55, 'hot'), (574, 69, 'hot'), (630, 70, 'viral')):
+            with self.subTest(score=score):
+                item = self.item()
+                item['metrics']['comments'] = comments
+                result = scoring.score(item, [], config, NOW)
+                self.assertEqual((result['score'], result['tier']), (score, tier))
 
     def points(self, values, step=30):
         return [[iso(NOW - timedelta(minutes=(len(values) - n - 1) * step)), v, 0, 0, 0] for n, v in enumerate(values)]

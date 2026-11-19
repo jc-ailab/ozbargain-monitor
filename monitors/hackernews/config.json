@@ -17,10 +17,10 @@
   },
   "thresholds": {
     "viral_score": 70,
-    "hot_score": 50,
-    "rising_score": 35,
+    "hot_score": 55,
+    "rising_score": 40,
     "viral_votes": 200,
-    "hot_votes": 60,
+    "hot_votes": 80,
     "burst_window_minutes": 30,
     "burst_min": 5,
     "burst_ratio": 2
