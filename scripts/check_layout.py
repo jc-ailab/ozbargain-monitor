@@ -42,6 +42,19 @@ PROBE_JS = """function layoutProbe() {
     n => inside(n, n.closest('.card'))));
   root.dataset.stats = String([...document.querySelectorAll('.stat strong')].every(
     n => n.scrollWidth <= n.clientWidth));
+  root.dataset.actions = String([...document.querySelectorAll('.card-actions')].every(n => {
+    const children = [...n.children], gap = parseFloat(getComputedStyle(n).columnGap);
+    const rects = children.map(c => c.getBoundingClientRect());
+    const fit = rects.reduce((sum, r) => sum + r.width, 0) + gap * (rects.length - 1) <= n.getBoundingClientRect().width + 0.01;
+    const valid = children.every(c => inside(c, n) && c.scrollWidth <= c.clientWidth + 1) &&
+      (!fit || rects.every(r => Math.abs(r.top - rects[0].top) < 1)) &&
+      rects.every((r, i) => rects.slice(i + 1).every(s =>
+        r.right <= s.left + 1 || s.right <= r.left + 1 || r.bottom <= s.top + 1 || s.bottom <= r.top + 1));
+    if (!valid) root.dataset.actionFailure = JSON.stringify({available: n.clientWidth, fit,
+      children: children.map((c, i) => ({text: c.textContent, x: rects[i].x, y: rects[i].y,
+        width: rects[i].width, scroll: c.scrollWidth, client: c.clientWidth}))});
+    return valid;
+  }));
 }"""
 PROBE = '<script>' + PROBE_JS + '; setTimeout(layoutProbe, 1000);</script>'
 
@@ -168,7 +181,13 @@ def capture(command, profile, width, shot):
                         raise OSError('Exact-width fixture rendering timed out')
                     time.sleep(0.05)
                 measured = cdp.call('Runtime.evaluate', {'expression':
-                    'layoutProbe(); document.documentElement.outerHTML',
+                    "layoutProbe(); const normalActions = document.documentElement.dataset.actions; "
+                    "data.items.forEach(i => { favourites.add(i.id); hidden.add(i.id); }); "
+                    "showHidden = true; render(); layoutProbe(); "
+                    "const savedActions = document.documentElement.dataset.actions; "
+                    "favourites.clear(); hidden.clear(); showHidden = false; render(); layoutProbe(); "
+                    "document.documentElement.dataset.savedActions = String(normalActions === 'true' && savedActions === 'true'); "
+                    'document.documentElement.outerHTML',
                     'returnByValue': True}, session)
                 dom = measured['result'].get('value', '')
                 screenshot = cdp.call('Page.captureScreenshot', {'format': 'png'}, session)
@@ -237,14 +256,15 @@ def main():
                         return 1
                     attrs = RootAttributes(stdout).attrs
                     expected = {'data-overflow': 'false', 'data-viewport': str(width),
-                                'data-scores': 'true', 'data-stats': 'true'}
+                                'data-scores': 'true', 'data-stats': 'true',
+                                'data-actions': 'true', 'data-saved-actions': 'true'}
                     if any(attrs.get(k) != v for k, v in expected.items()) or int(attrs.get('data-cards', 0)) < 4 or not shot.is_file():
                         print(f'FAIL {page} width={width}: {attrs}', file=sys.stderr)
                         return 1
                     if struct.unpack('!I', shot.read_bytes()[16:20])[0] != width:
                         print(f'FAIL screenshot width does not match {width}', file=sys.stderr)
                         return 1
-                    print(f'PASS {page} width={width}: overflow=false; scores/stats fit; screenshot={shot}')
+                    print(f'PASS {page} width={width}: overflow=false; scores/stats/actions fit (default + saved); screenshot={shot}')
         except (OSError, subprocess.TimeoutExpired) as exc:
             print(f'BLOCKED Chrome check: {exc}', file=sys.stderr)
             return 1
