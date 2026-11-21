@@ -2,7 +2,7 @@
 
 少刷一会儿，好价不错过。在手机上快速看热门、突然爆发的帖子和关注词命中。中文界面支持浅色 / 深色、收藏、隐藏和自定义关键词。
 
-**预定站点**：[OzBargain](https://jc-ailab.github.io/ozbargain-monitor/) · [Hacker News](https://jc-ailab.github.io/ozbargain-monitor/hn.html)。部署需要仓库 Owner 在 Settings → Pages 选择 GitHub Actions；本地实现不代表站点已上线。
+**预定站点**：[OzBargain](https://jc-ailab.github.io/ozbargain-monitor/) · [Hacker News](https://jc-ailab.github.io/ozbargain-monitor/hn.html) · [希腊与西班牙旅行优惠](https://jc-ailab.github.io/ozbargain-monitor/europe/)。部署需要仓库 Owner 在 Settings → Pages 选择 GitHub Actions；本地实现不代表站点已上线。
 
 ## 本地使用
 
@@ -33,6 +33,16 @@ python3 scripts/run.py --monitor hackernews --state-dir .state/live/hackernews -
 ```
 
 显式 `--state-dir` 应每个 monitor 使用独立目录。OzBargain 每轮最多两次 RSS 请求，包含重试；超时 20 秒。不会访问原帖正文、商家网页或跳转链接。请至少间隔 30 分钟。
+
+## 旅行优惠
+
+欧洲页按城市和停留日期显示官方门票、演出、堂食、实体店和可免费自提的优惠。现有 Actions 每半小时仍刷新原有监控，欧洲来源以页面上次尝试时间为准，间隔至少六小时。来源失败或条件变动会显示在页面底部。读取失败时，页面最多保留 24 小时内核验且仍适用的上次结果，并标记「上次核验」；原页条件无法确认时隐藏该条。来源准入和样例见[实现记录](docs/reports/EUROPE_MONITOR.md)。
+
+欧洲来源读取依赖 Python 3.14+ 的 robots.txt 通配符支持。只需一次实时核验即可在上面的本地服务查看 `/europe/`：
+
+```sh
+python3 scripts/run_europe.py --out site
+```
 
 ## 热度分怎么来
 

@@ -4,6 +4,8 @@ name: Refresh monitors and publish Pages
   schedule:
     - cron: '7,37 * * * *'
   workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     paths:
@@ -15,19 +17,33 @@ name: Refresh monitors and publish Pages
       - '.github/workflows/monitor.yml'
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
 
 concurrency:
-  group: monitor
+  group: ${{ github.event_name == 'pull_request' && format('monitor-pr-{0}', github.event.pull_request.number) || 'monitor' }}
   cancel-in-progress: false
 
 env:
   STOP_DATE: ${{ vars.STOP_DATE || '2027-01-01' }}
 
 jobs:
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Run offline tests and fixture builds
+        run: |
+          python -m unittest discover -s tests
+          python scripts/run.py --monitor ozbargain --fixtures
+          python scripts/run.py --monitor hackernews --fixtures
+          node tests/frontend_smoke.js site
+
   guard:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       proceed: ${{ steps.stop.outputs.proceed }}
@@ -50,12 +66,16 @@ jobs:
           PY
 
   publish:
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
     needs: guard
     if: needs.guard.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment-retry.outputs.page_url || steps.deployment.outputs.page_url }}
     steps:
       - name: Check out main
         uses: actions/checkout@v7
@@ -64,7 +84,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - name: Check out state branch or create orphan
         run: |
           git config user.name 'github-actions[bot]'
@@ -92,6 +112,9 @@ jobs:
           for monitor in ozbargain hackernews; do
             python scripts/run.py --monitor "$monitor" --state-dir "state/$monitor" --out generated || python scripts/fallback.py --monitor "$monitor" --out generated
           done
+      - name: Recheck Europe offers when due
+        run: |
+          python scripts/run_europe.py --out generated || python scripts/run_europe.py --out generated --fallback
       - name: Assemble site and persist publication fallback
         run: |
           mkdir -p _site state/data
@@ -112,10 +135,23 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          name: github-pages
+          name: github-pages-${{ github.run_attempt }}
           path: _site
       - name: Deploy Pages
         id: deployment
+        continue-on-error: true
         uses: actions/deploy-pages@v5
         with:
-          artifact_name: github-pages
+          artifact_name: github-pages-${{ github.run_attempt }}
+      - name: Wait for Pages artifact metadata
+        if: steps.deployment.outcome == 'failure' && !steps.deployment.outputs.page_url
+        run: sleep 20
+      - name: Retry Pages deployment once
+        id: deployment-retry
+        if: steps.deployment.outcome == 'failure' && !steps.deployment.outputs.page_url
+        uses: actions/deploy-pages@v5
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
+      - name: Preserve deployment failure after Pages accepted it
+        if: steps.deployment.outcome == 'failure' && steps.deployment.outputs.page_url
+        run: exit 1

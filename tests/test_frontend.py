@@ -37,6 +37,20 @@ class FrontendTests(unittest.TestCase):
             self.assertIn('name="viewport"', path.read_text())
             self.assertIn('lang="zh-CN"', path.read_text())
 
+    def test_europe_local_assets_and_navigation(self):
+        path = ROOT / 'site/europe/index.html'
+        page = Page(path.read_text())
+        js = (path.parent / 'europe.js').read_text()
+        self.assertEqual(page.external, [])
+        self.assertEqual(len(page.ids), len(set(page.ids)))
+        self.assertLessEqual(set(re.findall(r"byId\('([^']+)'\)", js)), set(page.ids))
+        self.assertIn("fetch('../data/europe.json'", js)
+        self.assertIn('name="viewport"', path.read_text())
+        for asset in page.assets:
+            self.assertTrue((path.parent / asset).is_file(), asset)
+        for filename in ('index.html', 'hn.html'):
+            self.assertIn('href="europe/"', (ROOT / 'site' / filename).read_text())
+
     def test_responsive_and_dark_styles(self):
         css = (ROOT / 'site/style.css').read_text()
         self.assertIn('prefers-color-scheme:dark', css)
