@@ -17,15 +17,20 @@ ROOT = Path(__file__).resolve().parents[1]
 class WorkflowTests(unittest.TestCase):
     def test_action_versions_and_pages_artifact_contract(self):
         text = (ROOT / '.github/workflows/monitor.yml').read_text()
-        self.assertEqual(re.findall(r'uses: (actions/\S+)', text), [
+        publish = text.split('  publish:\n', 1)[1]
+        self.assertEqual(re.findall(r'uses: (actions/\S+)', publish), [
             'actions/checkout@v7', 'actions/setup-python@v7',
-            'actions/upload-pages-artifact@v5', 'actions/deploy-pages@v5'])
-        upload = text.split('      - name: Upload Pages artifact\n', 1)[1]
-        upload, deploy = upload.split('      - name: Deploy Pages\n', 1)
-        self.assertIn('name: github-pages', upload)
+            'actions/upload-pages-artifact@v5', 'actions/deploy-pages@v5', 'actions/deploy-pages@v5'])
+        upload = publish.split('      - name: Upload Pages artifact\n', 1)[1]
+        artifact = 'github-pages-${{ github.run_attempt }}'
+        self.assertIn('name: ' + artifact, upload)
         self.assertIn('path: _site', upload)
-        self.assertIn('artifact_name: github-pages', deploy)
-        self.assertIn('url: ${{ steps.deployment.outputs.page_url }}', text)
+        self.assertEqual(upload.count('artifact_name: ' + artifact), 2)
+        self.assertIn('url: ${{ steps.deployment-retry.outputs.page_url || steps.deployment.outputs.page_url }}', publish)
+        self.assertIn('continue-on-error: true', upload)
+        self.assertEqual(upload.count("if: steps.deployment.outcome == 'failure' && !steps.deployment.outputs.page_url"), 2)
+        self.assertIn("if: steps.deployment.outcome == 'failure' && steps.deployment.outputs.page_url", upload)
+        self.assertIn("github.event_name != 'pull_request' && github.ref == 'refs/heads/main'", text)
 
     def test_gemini_secret_without_models_permission(self):
         text = (ROOT / '.github/workflows/monitor.yml').read_text()
@@ -43,7 +48,7 @@ class WorkflowTests(unittest.TestCase):
                 result = subprocess.run([sys.executable, '-c', code], env={**os.environ, 'EVENT_NAME': event, 'STOP_DATE': stop, 'GITHUB_OUTPUT': str(out)}, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(out.read_text().strip(), 'proceed=' + expected)
-        for required in ("7,37 * * * *", 'cancel-in-progress: false', 'commit --amend --no-edit', 'push --force origin HEAD:state', 'upload-pages-artifact', 'deploy-pages', 'python-version: \'3.12\''):
+        for required in ("7,37 * * * *", 'cancel-in-progress: false', 'commit --amend --no-edit', 'push --force origin HEAD:state', 'upload-pages-artifact', 'deploy-pages', 'python-version: \'3.14\''):
             self.assertIn(required, text)
 
     def test_publish_fallback_first_run_and_previous(self):
